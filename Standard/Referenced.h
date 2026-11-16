@@ -136,8 +136,8 @@ inline Referenced::WeakReferenced * Referenced::grabWeakReferenced()
 	while( m_pWeakRef == NULL || !m_pWeakRef->increment() )
 	{
 		WeakReferenced * pNewWeak = new WeakReferenced( const_cast<Referenced *>( this ) );
-		if ( !Atomic::compareSwap( reinterpret_cast<volatile int *>( &m_pWeakRef ), 
-			0, reinterpret_cast<int>( pNewWeak ) ) )
+		if ( !Atomic::compareSwapPointer( reinterpret_cast<void * volatile *>( &m_pWeakRef ), 
+			NULL, pNewWeak ) )
 		{
 			// another thread got there before us, so delete our copy..
 			delete pNewWeak;		

@@ -31,6 +31,9 @@ struct TypeName
 			sName.replace( "struct ", "" );
 			sName.replace( "enum ", "" );
 			sName.replace( "union ", "" );
+			// 64-bit VS appends " __ptr64" to pointer type names, which would hide the trailing '*' used to detect pointer types
+			sName.replace( " __ptr64", "" );
+			sName.replace( " __ptr32", "" );
 	#endif
 		}
 

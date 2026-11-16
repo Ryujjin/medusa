@@ -26,6 +26,8 @@ public:
 	static int		swap( volatile int * a_pInteger, int a_nValue );
 	//! Atomically compare the integer to a_nCompare, if equal then it swaps with a_nValue and true on success, false on failure
 	static bool		compareSwap( volatile int * a_pInteger, int a_nCompare, int a_nValue );
+	//! Atomically compare the pointer to a_pCompare, if equal then it swaps with a_pValue and true on success, false on failure. Pointer sized, safe for 64-bit.
+	static bool		compareSwapPointer( void * volatile * a_ppPointer, void * a_pCompare, void * a_pValue );
 };
 
 //---------------------------------------------------------------------------------------------------

@@ -89,7 +89,7 @@ private:
 
 		// now that we have the correct pointer, try to compare & swap it out to 0. Once that succeeds no other threads
 		// will be able to lock our pointer.
-		while(! Atomic::compareSwap( reinterpret_cast<volatile int *>( &m_pList ), reinterpret_cast<int>( pList ), 0 ) )
+		while(! Atomic::compareSwapPointer( reinterpret_cast<void * volatile *>( &m_pList ), pList, NULL ) )
 		{
 			Thread::sleep( 0 );	
 			if ( m_bDestroyed )
@@ -100,7 +100,7 @@ private:
 	}
 
 	//! Data
-	volatile QueueList *	
+	QueueList * volatile
 					m_pList;
 	volatile bool	m_bDestroyed;	
 };

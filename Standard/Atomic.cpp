@@ -60,5 +60,14 @@ bool Atomic::compareSwap( volatile int * a_pInteger, int a_nCompare, int a_nValu
 #endif
 }
 
+bool Atomic::compareSwapPointer( void * volatile * a_ppPointer, void * a_pCompare, void * a_pValue )
+{
+#if defined(_WIN32)
+	return InterlockedCompareExchangePointer( a_ppPointer, a_pValue, a_pCompare ) == a_pCompare;
+#else
+	return __sync_val_compare_and_swap( a_ppPointer, a_pCompare, a_pValue ) == a_pCompare;
+#endif
+}
+
 //---------------------------------------------------------------------------------------------------
 //EOF
