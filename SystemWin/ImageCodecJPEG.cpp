@@ -7,7 +7,17 @@
 #include "Debug/Assert.h"
 #include "SystemWin/ImageCodecJPEG.h"
 
+// The Intel(R) JPEG Library (IJL) ships only as an x86 (32-bit) binary in this
+// repository (SystemWin/IJL/ijl15.lib + ijl15.dll). There is no x64 build of
+// IJL available, so the real codec implementation is only compiled for x86;
+// on x64 these functions are stubbed out to fail gracefully instead of
+// producing unresolved external link errors.
+#if !defined(_M_X64)
+#define SYSTEMWIN_HAS_IJL 1
 #include "SystemWin/ijl/ijl.h"
+#else
+#define SYSTEMWIN_HAS_IJL 0
+#endif
 
 //----------------------------------------------------------------------------
 
@@ -59,6 +69,8 @@ int ImageCodecJPEG::decode( const Buffer & input, Buffer & output, const SizeInt
 }
 
 //----------------------------------------------------------------------------
+
+#if SYSTEMWIN_HAS_IJL
 
 static bool EncodeToJPEGBuffer( byte* lpRgbBuffer, dword dwWidth, dword dwHeight, byte** lppJpgBuffer, dword* lpdwJpgBufferSize, int quality )
 {
@@ -213,6 +225,29 @@ static bool DecodeFromJPEGBuffer( byte* lpJpgBuffer, dword dwJpgBufferSize, byte
 	return bres;
 
 } // DecodeFromJPEGBuffer()
+
+#else // !SYSTEMWIN_HAS_IJL
+
+// x64 builds: no Intel JPEG Library binary is available, so fail these
+// operations rather than leave unresolved externals.
+static bool EncodeToJPEGBuffer( byte* /*lpRgbBuffer*/, dword /*dwWidth*/, dword /*dwHeight*/, byte** lppJpgBuffer, dword* lpdwJpgBufferSize, int /*quality*/ )
+{
+	*lppJpgBuffer = NULL;
+	*lpdwJpgBufferSize = 0;
+	return false;
+}
+
+static bool DecodeFromJPEGBuffer( byte* /*lpJpgBuffer*/, dword /*dwJpgBufferSize*/, byte** lppRgbBuffer, 
+						  dword* lpdwWidth, dword* lpdwHeight, dword* lpdwNumberOfChannels)
+{
+	*lppRgbBuffer = NULL;
+	*lpdwWidth = 0;
+	*lpdwHeight = 0;
+	*lpdwNumberOfChannels = 0;
+	return false;
+}
+
+#endif // SYSTEMWIN_HAS_IJL
 
 //----------------------------------------------------------------------------
 //EOF
