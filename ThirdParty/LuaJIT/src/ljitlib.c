@@ -625,10 +625,17 @@ LUALIB_API int luaopen_jit(lua_State *L)
   lua_pop(L, 1);
 
   /* Everything ok, so turn the JIT engine on. Vroooom! */
+#if defined(_M_X64) || defined(__x86_64__)
+  /* x64 is interpreter-only: the backend reports init failure by design,
+  ** so the engine stays off and this is not an error. */
+  if (!(G(L)->jit_state->flags & JIT_F_INIT_FAILED) &&
+	  luaJIT_setmode(L, 0, LUAJIT_MODE_ENGINE|LUAJIT_MODE_ON) <= 0) {
+#else
   if (luaJIT_setmode(L, 0, LUAJIT_MODE_ENGINE|LUAJIT_MODE_ON) <= 0) {
-    /* Ouch. Someone screwed up DynASM or the JSUBs. Probably me. */
-    /* But if you get 999999999, look at jit_consistency_check(). */
-    return luaL_error(L, "JIT engine init failed (%d)",
+#endif
+	/* Ouch. Someone screwed up DynASM or the JSUBs. Probably me. */
+	/* But if you get 999999999, look at jit_consistency_check(). */
+	return luaL_error(L, "JIT engine init failed (%d)",
 	G(L)->jit_state->dasmstatus);
   }
 

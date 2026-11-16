@@ -31,6 +31,65 @@
 /* Embed architecture-specific DynASM encoder. */
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86)
 #include "dasm_x86.h"
+
+#elif defined(_M_X64) || defined(__x86_64__)
+
+/*
+** No native DynASM encoder exists (yet) for x64. These stubs only need to
+** link -- they are never called because luaJIT_initbackend() (in
+** ljit_backend.c) always fails on x64, keeping the JIT engine disabled
+** and LuaJIT running purely as a bytecode interpreter.
+*/
+
+void dasm_init(Dst_DECL, int maxsection)
+{
+  (void)Dst_REF; (void)maxsection;
+}
+
+void dasm_free(Dst_DECL)
+{
+  (void)Dst_REF;
+}
+
+void dasm_setupglobal(Dst_DECL, void **gl, unsigned int maxgl)
+{
+  (void)Dst_REF; (void)gl; (void)maxgl;
+}
+
+void dasm_growpc(Dst_DECL, unsigned int maxpc)
+{
+  (void)Dst_REF; (void)maxpc;
+}
+
+void dasm_setup(Dst_DECL, dasm_ActList actionlist)
+{
+  (void)Dst_REF; (void)actionlist;
+}
+
+void dasm_put(Dst_DECL, int start, ...)
+{
+  (void)Dst_REF; (void)start;
+}
+
+int dasm_link(Dst_DECL, size_t *szp)
+{
+  (void)Dst_REF;
+  if (szp) *szp = 0;
+  return 1;  /* Non-zero: report an error if ever reached. */
+}
+
+int dasm_encode(Dst_DECL, void *buffer)
+{
+  (void)Dst_REF; (void)buffer;
+  return 1;  /* Non-zero: report an error if ever reached. */
+}
+
+int dasm_getpclabel(Dst_DECL, unsigned int pc)
+{
+  (void)Dst_REF; (void)pc;
+  return -1;
+}
+
 #else
 #error "No support for this architecture (yet)"
 #endif

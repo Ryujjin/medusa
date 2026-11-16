@@ -30,6 +30,13 @@
 
 /* ------------------------------------------------------------------------ */
 
+/* Include pre-processed architecture-specific backend. */
+#if defined(__i386) || defined(__i386__) || defined(_M_IX86)
+#ifndef LUA_NUMBER_DOUBLE
+#error "No support for other number types on x86 (yet)"
+#endif
+#include "ljit_x86.h"
+
 /* Get target of combined JMP op. */
 static int jit_jmp_target(jit_State *J)
 {
@@ -37,18 +44,6 @@ static int jit_jmp_target(jit_State *J)
   jit_assert(GET_OPCODE(*J->nextins)==OP_JMP);
   return J->nextpc + 1 + GETARG_sBx(*J->nextins);
 }
-
-/* ------------------------------------------------------------------------ */
-
-/* Include pre-processed architecture-specific backend. */
-#if defined(__i386) || defined(__i386__) || defined(_M_IX86)
-#ifndef LUA_NUMBER_DOUBLE
-#error "No support for other number types on x86 (yet)"
-#endif
-#include "ljit_x86.h"
-#else
-#error "No support for this architecture (yet)"
-#endif
 
 /* ------------------------------------------------------------------------ */
 
@@ -337,6 +332,58 @@ void luaJIT_freebackend(lua_State *L)
   luaJIT_freemcodeheap(J);  /* Frees JSUB mcode, too. */
   dasm_free(Dst);
 }
+
+#elif defined(_M_X64) || defined(__x86_64__)
+
+/*
+** No native JIT compiler backend exists (yet) for x64. Run LuaJIT in pure
+** bytecode-interpreter mode on this platform: luaJIT_initbackend() always
+** reports failure, which makes luaJIT_initstate() set JIT_F_INIT_FAILED.
+** jit_compile() in ljit_core.c checks that flag first and short-circuits
+** to JIT_S_ENGINE_OFF, so luaJIT_backend()/the DynASM encoder are never
+** actually invoked at runtime on x64 -- they only need to link cleanly.
+*/
+
+/* Arch string. */
+const char luaJIT_arch[] = "x64 (interpreter only, no JIT backend)";
+
+/* Initialize compiler backend: always fail, disabling the JIT engine. */
+int luaJIT_initbackend(lua_State *L)
+{
+  jit_State *J = G(L)->jit_state;
+  J->L = L;
+  J->pt = NULL;
+  J->D = NULL;
+  J->mcodeheap = NULL;
+  J->jsubmcode = NULL;
+  J->szjsubmcode = 0;
+  J->numjsub = 0;
+  J->jsub = NULL;
+  return JIT_S_COMPILER_ERROR;  /* Backend unavailable; engine stays off. */
+}
+
+/* Free compiler backend. Nothing was ever allocated. */
+void luaJIT_freebackend(lua_State *L)
+{
+  (void)L;
+}
+
+/* Compiler backend: never called because the engine is always off. */
+int luaJIT_backend(lua_State *L)
+{
+  lua_pushinteger(L, JIT_S_COMPILER_ERROR);
+  return 1;
+}
+
+/* Notify backend that the debug mode may have changed. No-op. */
+void luaJIT_debugnotify(jit_State *J)
+{
+  (void)J;
+}
+
+#else
+#error "No support for this architecture (yet)"
+#endif
 
 /* ------------------------------------------------------------------------ */
 
