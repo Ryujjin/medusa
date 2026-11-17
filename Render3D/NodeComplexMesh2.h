@@ -1,4 +1,4 @@
-/*
+﻿/*
 	NodeComplexMesh2.h
 
 	This class is a rewrite of the original NodeComplexMesh class. This class is used to display 
@@ -113,6 +113,7 @@ public:
 private:
 	// Mutators
 	void				createPrimitives( DisplayDevice * pDisplay );
+	void				buildLodLevel( DisplayDevice * pDisplay, int lod, float targetRatio );
 	bool				compareVerts( const Vertex & lhs, const Vertex & rhs );
 
 	// Types
@@ -133,9 +134,18 @@ private:
 	bool				m_EnableLOD;
 	float				m_MinLOD, m_MaxLOD;
 
+	// Automatic LOD constants
+	enum { LOD_LEVELS = 3 };					// 0=full, 1=50%, 2=20%
+
 	// device objects created by createPrimitives()
 	Array< Array< PrimitiveTriangleListI::Ref > >
-						m_Primitives;							// m_Primitives[frame][material]
+						m_Primitives;							// m_Primitives[frame][material]  (LOD 0)
+
+	// Simplified geometry for LOD levels 1 and 2 (built automatically)
+	Array< Array< TriangleList > >
+						m_LodTriangles[ LOD_LEVELS ];				// m_LodTriangles[lod][frame][material]
+	Array< Array< PrimitiveTriangleListI::Ref > >
+						m_LodPrimitives[ LOD_LEVELS ];				// m_LodPrimitives[lod][frame][material]
 };
 
 //----------------------------------------------------------------------------

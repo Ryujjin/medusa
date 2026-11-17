@@ -10,6 +10,7 @@
 
 #include "Standard/Tree.h"
 #include <assert.h>
+#include <string.h>
 
 //----------------------------------------------------------------------------
 
@@ -201,19 +202,34 @@ inline Tree<K,T> & Hash<K,T,S>::tree( int n )
 template<class K,class O,unsigned int tableSize>
 inline unsigned int Hash<K,O,tableSize>::keyTree( const K & key ) const
 {
-	return (unsigned int)( key & (tableSize-1) );
+	size_t hashValue = 0;
+	if (sizeof(K) <= sizeof(size_t))
+		memcpy(&hashValue, &key, sizeof(K));
+	else
+		memcpy(&hashValue, &key, sizeof(size_t));
+	return static_cast<unsigned int>( hashValue & (tableSize-1) );
 }
 
 template<class K,class O,unsigned int tableSize>
 inline const Tree<K,O> & Hash<K,O,tableSize>::constHashKey( const K &key ) const	
 { 
-	return m_Hash[ key & (tableSize-1) ];			
+	size_t hashValue = 0;
+	if (sizeof(K) <= sizeof(size_t))
+		memcpy(&hashValue, &key, sizeof(K));
+	else
+		memcpy(&hashValue, &key, sizeof(size_t));
+	return m_Hash[ hashValue & (tableSize-1) ];			
 }
 
 template<class K,class O,unsigned int tableSize>
 inline Tree<K,O> & Hash<K,O,tableSize>::hashKey( const K &key )
 { 
-	return m_Hash[ key & (tableSize-1)]; 
+	size_t hashValue = 0;
+	if (sizeof(K) <= sizeof(size_t))
+		memcpy(&hashValue, &key, sizeof(K));
+	else
+		memcpy(&hashValue, &key, sizeof(size_t));
+	return m_Hash[ hashValue & (tableSize-1) ]; 
 }
 
 //----------------------------------------------------------------------------

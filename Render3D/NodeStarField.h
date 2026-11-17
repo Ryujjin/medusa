@@ -64,6 +64,7 @@ protected:
 	bool				m_bJumpActive;
 	Array< Star >		m_Stars;					
 	float				m_LastTime;
+	Matrix33			m_LastFrame;		// camera frame from the previous render call
 	Vector3				m_LastPosition;
 
 	// Mutators

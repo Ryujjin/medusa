@@ -1,6 +1,7 @@
 /*
 	PrimitiveSetTransformD3D.cpp
 	(c)2005 Palestar, Richard Lyle
+	Updated to DirectX 11
 */
 
 #include "DisplayD3D/PrimitiveSetTransformD3D.h"
@@ -13,15 +14,23 @@ IMPLEMENT_PRIMITIVE_FACTORY( PrimitiveSetTransformD3D );
 bool PrimitiveSetTransformD3D::execute()
 {
 	DisplayDeviceD3D * pDeviceD3D = (DisplayDeviceD3D *)m_pDevice;
-	if ( pDeviceD3D->m_pD3DD->SetTransform( D3DTS_WORLD, &m_Matrix ) != D3D_OK)
+	if (!pDeviceD3D || !pDeviceD3D->m_pContext)
 		return false;
-	
-	// update vertex/pixel shader globals when the transform is changed
-	if ( pDeviceD3D->m_pPSConstants != NULL )
-		pDeviceD3D->updateGlobals( pDeviceD3D->m_pPSConstants );
-	if ( pDeviceD3D->m_pVSConstants != NULL )
-		pDeviceD3D->updateGlobals( pDeviceD3D->m_pVSConstants );
-	
+
+	// Store the transform in the device for shader use
+	pDeviceD3D->m_pCurrentTransform = this;
+
+	// Update vertex/pixel shader globals when the transform is changed
+	pDeviceD3D->updateGlobals();
+
+	// Upload the updated constants (new mWorld/mView/mProj) to the GPU constant
+	// buffer immediately.  updateGlobals() only writes to the CPU-side cache;
+	// without this apply() the geometry children would draw with the stale CB
+	// from the previous material's apply() — causing a one-frame transform lag
+	// that shows up as orbit-ring / planet-icon misalignment when the camera moves.
+	if (pDeviceD3D->m_pMatShader.valid() && !pDeviceD3D->m_pMatShader->released())
+		pDeviceD3D->m_pMatShader->apply(pDeviceD3D);
+
 	return true;
 }
 
@@ -48,25 +57,20 @@ void PrimitiveSetTransformD3D::setTransform( const Matrix33 &transform, const Ve
 	m_Transform = transform;
 	m_PostTransformOffset = postTransformOffset;
 
-	m_Matrix._11 = m_Transform.i.x;
-	m_Matrix._12 = m_Transform.i.y;
-	m_Matrix._13 = m_Transform.i.z;
-	m_Matrix._14 = 0.0f;
-
-	m_Matrix._21 = m_Transform.j.x;
-	m_Matrix._22 = m_Transform.j.y;
-	m_Matrix._23 = m_Transform.j.z;
-	m_Matrix._24 = 0.0f;
-
-	m_Matrix._31 = m_Transform.k.x;
-	m_Matrix._32 = m_Transform.k.y;
-	m_Matrix._33 = m_Transform.k.z;
-	m_Matrix._34 = 0.0f;
-
-	m_Matrix._41 = m_PostTransformOffset.x;
-	m_Matrix._42 = m_PostTransformOffset.y;
-	m_Matrix._43 = m_PostTransformOffset.z;
-	m_Matrix._44 = 1.0f;
+	// Build DirectX 11 world matrix from transform and offset.
+	// Row-vector convention (HLSL: mul(pos, mWorld)): each row must be one of
+	// the frame's basis vectors in world space — exactly matching DX9's layout:
+	//   _11=i.x _12=i.y _13=i.z   (Row 0 = local X axis in world space)
+	//   _21=j.x _22=j.y _23=j.z   (Row 1 = local Y axis in world space)
+	//   _31=k.x _32=k.y _33=k.z   (Row 2 = local Z axis in world space)
+	//   _41=t.x _42=t.y _43=t.z   (Row 3 = world translation)
+	// Result: pos_world = frame.i*pos.x + frame.j*pos.y + frame.k*pos.z + offset
+	m_Matrix = DirectX::XMMATRIX(
+		m_Transform.i.x, m_Transform.i.y, m_Transform.i.z, 0.0f,
+		m_Transform.j.x, m_Transform.j.y, m_Transform.j.z, 0.0f,
+		m_Transform.k.x, m_Transform.k.y, m_Transform.k.z, 0.0f,
+		m_PostTransformOffset.x, m_PostTransformOffset.y, m_PostTransformOffset.z, 1.0f
+	);
 }
 
 //------------------------------------------------------------------------------------

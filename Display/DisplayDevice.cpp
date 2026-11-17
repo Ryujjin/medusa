@@ -16,6 +16,7 @@ bool					DisplayDevice::sm_bWaitVB = true;								// wait for verticle blank
 dword					DisplayDevice::sm_nTrianglesRendered = 0;						// total number of triangles rendered via lists
 dword					DisplayDevice::sm_nLinesRendered = 0;
 DisplayDevice *			DisplayDevice::sm_pCacheDevice = NULL;							// device for used to precache graphics assets...
+void					(*DisplayDevice::sm_pfnFlushPendingMaterials)(DisplayDevice*) = NULL;
 
 CharString				DisplayDevice::sm_sShadersPath;									// base directory of shader files
 

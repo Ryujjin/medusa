@@ -51,10 +51,10 @@ void Collection::remove( int resource )
 	m_Resources.remove( resource );
 }
 
-void Collection::load() 
+void Collection::load( bool bBlocking ) 
 {
 	for(int i=0;i<m_Resources.size();i++)
-		m_Resources[i].load();
+		m_Resources[i].load( bBlocking );
 }
 
 void Collection::unload()

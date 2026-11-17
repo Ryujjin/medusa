@@ -254,9 +254,14 @@ void RenderContext::setProjection(const RectInt & window,
 	m_State.m_Front = front;
 	m_State.m_Back = back;
 
-	float fAspect = 1.0f;
+	// Use the real window aspect ratio so CPU frustum planes match the GPU
+	// projection (XMMatrixPerspectiveFovLH also uses actual aspect).
+	// Fallback to 1.0 if the window is not yet valid.
+	float fAspect = (m_State.m_Window.valid() && m_State.m_Window.height() > 0)
+		? (float)m_State.m_Window.width() / (float)m_State.m_Window.height()
+		: 1.0f;
 	float fH = 2 * sin(m_State.m_Fov / 2.0f);
-	float fW = (1.0f / fAspect) * fH;
+	float fW = fAspect * fH;
 	float fF = 2 * cos(m_State.m_Fov / 2.0f);
 
 	m_State.m_Fulstrum[FRONT].set(Vector3(0, 0, 1), m_State.m_Front);
@@ -268,8 +273,17 @@ void RenderContext::setProjection(const RectInt & window,
 
 	// used by project and unProject
 	m_State.m_Center = PointFloat((m_State.m_Window.right + m_State.m_Window.left) >> 1, (m_State.m_Window.top + m_State.m_Window.bottom) >> 1);
-	m_State.m_D = float(m_State.m_Window.width() >> 1) / tan(m_State.m_Fov * 0.5f);
+	m_State.m_D = float(m_State.m_Window.height() >> 1) / tan(m_State.m_Fov * 0.5f);
 	m_State.m_W = 1.0f / (m_State.m_Back - m_State.m_Front);
+
+	// Sync FOV and clip planes to the display device immediately.
+	// Pass the real camera frame/position so that updateGlobals() builds the
+	// correct mView = XMMatrixLookAtLH(camera) for world-space geometry drawn
+	// with pushIdentity() (shield rings, turn arcs, beam fans, etc.).
+	// The shadow pass calls m_Display->setProjection() directly and is unaffected.
+	if (m_Display.valid())
+		m_Display->setProjection(m_State.m_Frame, m_State.m_Position,
+			m_State.m_Window, m_State.m_Fov, m_State.m_Front, m_State.m_Back);
 }
 
 void RenderContext::setMaxShadowLights(int a_nLights)
@@ -299,7 +313,7 @@ void RenderContext::setWindow(const RectInt & window)
 
 	// used by project and unProject
 	m_State.m_Center = PointFloat((m_State.m_Window.right + m_State.m_Window.left) >> 1, (m_State.m_Window.top + m_State.m_Window.bottom) >> 1);
-	m_State.m_D = float(m_State.m_Window.width() >> 1) / tan(m_State.m_Fov * 0.5f);
+	m_State.m_D = float(m_State.m_Window.height() >> 1) / tan(m_State.m_Fov * 0.5f);
 	m_State.m_W = 1.0f / (m_State.m_Back - m_State.m_Front);
 }
 
@@ -310,7 +324,11 @@ void RenderContext::setOffset(const PointInt & offset)
 
 void RenderContext::updateTransforms()
 {
-	// set the projection
+	// Re-sync the display device's projection parameters from m_State.
+	// Frame and position are intentionally passed so that mView = camera look-at,
+	// which is correct because all scene geometry (meshes, sprites) uses
+	// pushTransform() with WORLD-SPACE coordinates — mWorld = world-space,
+	// mView = world->view, mProj = perspective is the standard DX pipeline.
 	m_Display->setProjection(m_State.m_Frame,
 		m_State.m_Position,
 		m_State.m_Window,
@@ -444,6 +462,14 @@ void RenderContext::endShadowPass()
 {
 	m_Display->endShadowPass();
 	popState();
+	// Restore the camera projection into the device after popping the shadow-pass
+	// state. beginShadowPass() called m_Display->setProjection(lightFrame, lightPos)
+	// which leaves m_Proj pointing at the light. popState() restores m_State (camera
+	// frame/position) but does NOT touch m_Proj. Without this call, updateGlobals()
+	// builds mView from the stale light frame — stars rendered with pushIdentity()
+	// (mWorld=I) are then seen from the light's perspective, producing the sphere
+	// artifact.
+	updateTransforms();
 }
 
 bool RenderContext::endScene()

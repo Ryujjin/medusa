@@ -93,7 +93,7 @@ bool UserStorage::load( const char * a_pFileName, dword a_nUserID )
 
 bool UserStorage::save(bool a_bCloseFile)
 {
-	if (! m_pFileDisk && m_nUserId != 0 )
+	if (! m_pFileDisk && m_nUserId != 0 && m_sFileName.length() > 0 )
 	{
 		// attempt to re-lock the file so we can save..
 		FileDisk::Ref pFile = new FileDisk();

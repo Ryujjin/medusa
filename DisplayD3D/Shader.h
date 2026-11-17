@@ -12,11 +12,11 @@
 #include "Factory/Widget.h"
 #include "Standard/WeakReference.h"
 
-#include <map>									// STL
-#include <string>
+
 #include <d3d9.h>								// DirectX 9.0
 #include <d3dx9.h>
-
+#include <map>									// STL
+#include <string>
 class DisplayDeviceD3D;		// forward declare
 
 //---------------------------------------------------------------------------------------------------

@@ -39,10 +39,7 @@ bool Draw::draw( const PointInt &point, Image * pImage, int f /*= 0*/)
 	RectInt srcRect( dstRectClipped - dstPoint );
 	
 	if (! srcRect.valid() )
-	{
-		TRACE( "Draw::draw() - srcRect is not valid!" );
-		return false;
-	}
+		return false;	// image is fully clipped outside the surface — normal, not an error
 
 	ColorFormat::Ref dstFormat = ColorFormat::allocateFormat( m_Surface->colorFormat() );
 	if (! dstFormat )
@@ -130,10 +127,7 @@ bool Draw::drawAlpha( const PointInt &point, Image * pImage, int f /*= 0*/)
 	RectInt srcRect( dstRectClipped - dstPoint );
 
 	if (! srcRect.valid() )
-	{
-		TRACE( "Draw::drawAlpha() - srcRect is not valid!" );
-		return false;
-	}
+		return false;	// image is fully clipped outside the surface — normal, not an error
 	int pixelSize = dstFormat->byteSize();
 
 	Color * srcSurface = (Color *)pImage->frame( f );
@@ -194,10 +188,7 @@ bool Draw::draw( PointInt &point, Font * pFont, int ch, const Color &color )
 	RectInt srcRect( dstRectClipped - point );
 	
 	if (! srcRect.valid() )
-	{
-		TRACE( "Draw::draw() - srcRect is not valid!" );
-		return false;
-	}
+		return false;	// glyph is fully clipped outside the surface — normal, not an error
 
 	ColorFormat::Ref dstFormat = ColorFormat::allocateFormat( m_Surface->colorFormat() );
 

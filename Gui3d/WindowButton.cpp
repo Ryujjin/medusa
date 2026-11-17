@@ -56,7 +56,13 @@ bool WindowButton::read( const InStream & input )
 	if (! NodeWindow::read( input ) )
 		return false;
 
-	m_Color = m_Button.valid() ? m_Button->emissive() : Color(255,255,255,255);
+	// DX11: the UI shader multiplies texture × vertex colour.  In DX9 the
+	// material emissive was a lighting property, not a tint for 2-D icons.
+	// Material::initialize() defaults emissive to Color(0,0,0) (black, alpha=0
+	// in Standard/Color), which would make every button texture render black.
+	// Always use WHITE so the icon displays at its natural colours; the vertex
+	// alpha (set per-frame from m_Alpha) still controls opacity correctly.
+	m_Color = Color(255,255,255,255);
 	//m_Label = LocalizedString( m_Label );
 	//m_Tip = LocalizedString( m_Tip );
 	return true;

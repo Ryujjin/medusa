@@ -1,6 +1,7 @@
 /*
 	PrimitiveLineStripD3D.h
 	(c)2005 Palestar, Richard Lyle
+	Updated to DirectX 11
 */
 
 #ifndef PRIMITIVE_LINE_STRIP_D3D_H 
@@ -27,8 +28,7 @@ public:
 
 private:
 	// Data
-	LPDIRECT3DVERTEXBUFFER9
-					m_VB;
+	ID3D11Buffer*	m_VB;
 	int				m_Verts;
 };
 
@@ -50,8 +50,7 @@ public:
 
 private:
 	// Data
-	LPDIRECT3DVERTEXBUFFER9
-					m_VB;
+	ID3D11Buffer*	m_VB;
 	int				m_Verts;
 };
 
@@ -99,8 +98,7 @@ public:
 
 private:
 	// Data
-	LPDIRECT3DVERTEXBUFFER9
-					m_VB;
+	ID3D11Buffer*	m_VB;
 	int				m_Verts;
 };
 

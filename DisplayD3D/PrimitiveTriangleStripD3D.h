@@ -1,10 +1,11 @@
 /*
 	PrimitiveTriangleStripD3D.h
 	(c)2005 Palestar, Richard Lyle
+	Updated to DirectX 11
 */
 
-#ifndef PRIMITIVE_TRIANGLE_FAN_D3D_H 
-#define PRIMITIVE_TRIANGLE_FAN_D3D_H
+#ifndef PRIMITIVE_TRIANGLE_STRIP_D3D_H 
+#define PRIMITIVE_TRIANGLE_STRIP_D3D_H
 
 #include "Display/PrimitiveTriangleStrip.h"
 #include "DisplayD3D/DisplayDeviceD3D.h"
@@ -26,8 +27,7 @@ public:
 	bool			initialize( int vertexCount, const Vertex * pVerticies );
 
 private:
-	LPDIRECT3DVERTEXBUFFER9
-					m_VB;
+	ID3D11Buffer*	m_VB;
 	int				m_Verts;
 };
 
@@ -48,8 +48,7 @@ public:
 	bool			initialize( int vertexCount, const VertexL * pVerticies );
 
 private:
-	LPDIRECT3DVERTEXBUFFER9
-					m_VB;
+	ID3D11Buffer*	m_VB;
 	int				m_Verts;
 };
 

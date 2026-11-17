@@ -1,4 +1,4 @@
-/*
+﻿/*
 	WorldClient.cpp
 
 	This object is used to connect to an WorldServer object over a Socket object
@@ -234,25 +234,71 @@ bool WorldClient::setContext( Context * pContext )
 {
 	if ( m_pWorldContext != pContext )
 	{
+		dword nSetCtxStart = Time::milliseconds();
+		LOG_STATUS( "WorldClient", "setContext: beginning context switch" );
+
 		if ( !m_bProxy && m_pWorldContext.valid() )
 		{
+			dword nStopMs = Time::milliseconds();
 			m_pWorldContext->setUser( NULL );
 			m_pWorldContext->stop();
+			LOG_STATUS( "WorldClient", CharString().format("setContext: old context stop: %u ms", Time::milliseconds() - nStopMs) );
 		}
 
 		m_pWorldContext = pContext;
 		m_pWorldContext->setUser( this );
 
 		// prepare the world
+		dword nPrepMs = Time::milliseconds();
 		if (! prepWorld() )
 		{
 			LOG_ERROR( "WorldClient", "setContext() - Failed to prepare world!" );
 			return false;
 		}
-		m_pWorldContext->start();
-	}
+		LOG_STATUS( "WorldClient", CharString().format("setContext: prepWorld: %u ms", Time::milliseconds() - nPrepMs) );
 
-	return true;
+// WorldContext::start() calls initializeZones() which walks every noun in every zone.
+// On large servers / debug builds this can take 30-120 seconds, blocking the receive
+// thread so PING messages from the server are never answered.  The server's
+// pingClients() increments nPings every 30 s and kills the client after MAX_PINGS=3
+// missed pongs (90 s).  Run start() on a background thread and pump Client::update()
+// here so PING/PONG continues to flow while the world initialises.
+struct ContextStartThread : public SafeThread
+{
+WorldContext *	m_pContext;
+Event			m_Done;
+ContextStartThread( WorldContext * p ) : m_pContext( p ) {}
+int run()
+{
+m_pContext->start();
+m_Done.signal();
+return 0;
+}
+};
+
+dword nStartMs = Time::milliseconds();
+ContextStartThread startThread( m_pWorldContext );
+startThread.resume();
+
+// Pump the receive loop (handles PING/PONG) while start() runs in the background.
+// Timeout after 3 minutes -- far longer than any realistic start() duration.
+const dword START_TIMEOUT_MS = 3 * 60 * 1000;
+while ( !startThread.m_Done.signaled() )
+{
+if ( (Time::milliseconds() - nStartMs) > START_TIMEOUT_MS )
+{
+LOG_ERROR( "WorldClient", "setContext: start() timed out after %u ms!", Time::milliseconds() - nStartMs );
+break;
+}
+Client::update();// processes PING/PONG so server does not disconnect us
+Thread::sleep( 10 );
+}
+
+LOG_STATUS( "WorldClient", CharString().format("setContext: context start(): %u ms", Time::milliseconds() - nStartMs) );
+LOG_STATUS( "WorldClient", CharString().format("setContext: total %u ms", Time::milliseconds() - nSetCtxStart) );
+}
+
+return true;
 }
 
 void WorldClient::setUser( UserWorldClient * pUser )
@@ -916,7 +962,7 @@ void WorldClient::updateMeta()
 						m_bBanned = false;
 						pushChat( "<color;ffffff>CLIENT: Failed to login to the meta-server..." );
 						m_pMetaClient->close();
-						m_ReconnectTime = Time::seconds() + 300;
+						m_ReconnectTime = Time::seconds() + 30;
 					}
 					break;
 				}

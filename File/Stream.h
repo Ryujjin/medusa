@@ -286,13 +286,16 @@ inline const OutStream & operator<<( const OutStream & output, const u32 & data 
 }
 
 inline const InStream & operator>>( const InStream & input, u64 & data )
-{																		
-	if ( (input.filter() & FF_TEXT) == 0 )								
+{																						
+	if ( (input.filter() & FF_TEXT) == 0 )												
 		input.read( &data, sizeof( data ) );							
-	else							
-		sscanf( input.readLine(), "%llu", &data );
-	return input;														
-}																		
+	else					
+	{
+		if ( sscanf( input.readLine(), "%llu", &data ) != 1 )
+			data = 0;
+	}
+	return input;																		
+}
 
 inline const OutStream & operator<<( const OutStream & output, const u64 & data )	
 {																						
@@ -360,13 +363,16 @@ inline const OutStream & operator<<( const OutStream & output, const s32 & data 
 }
 
 inline const InStream & operator>>( const InStream & input, s64 & data )
-{																		
-	if ( (input.filter() & FF_TEXT) == 0 )								
+{																						
+	if ( (input.filter() & FF_TEXT) == 0 )												
 		input.read( &data, sizeof( data ) );							
-	else							
-		sscanf( input.readLine(), "%lld", &data );
-	return input;														
-}																		
+	else					
+	{
+		if ( sscanf( input.readLine(), "%lld", &data ) != 1 )
+			data = 0;
+	}
+	return input;																		
+}
 
 inline const OutStream & operator<<( const OutStream & output, const s64 & data )	
 {																						
@@ -380,13 +386,16 @@ inline const OutStream & operator<<( const OutStream & output, const s64 & data 
 //---------------------------------------------------------------------------------------------------
 
 inline const InStream & operator>>( const InStream & input, f32 & data )
-{																		
-	if ( (input.filter() & FF_TEXT) == 0 )								
+{																						
+	if ( (input.filter() & FF_TEXT) == 0 )												
 		input.read( &data, sizeof( data ) );							
-	else							
-		sscanf( input.readLine(), "%f", &data );
-	return input;														
-}																		
+	else					
+	{
+		if ( sscanf( input.readLine(), "%f", &data ) != 1 )
+			data = 0.0f;
+	}
+	return input;																		
+}
 
 inline const OutStream & operator<<( const OutStream & output, const f32 & data )	
 {																						
@@ -398,13 +407,16 @@ inline const OutStream & operator<<( const OutStream & output, const f32 & data 
 }
 
 inline const InStream & operator>>( const InStream & input, f64 & data )
-{																		
-	if ( (input.filter() & FF_TEXT) == 0 )								
+{																						
+	if ( (input.filter() & FF_TEXT) == 0 )												
 		input.read( &data, sizeof( data ) );							
-	else							
-		sscanf( input.readLine(), "%lf", &data );
-	return input;														
-}																		
+	else					
+	{
+		if ( sscanf( input.readLine(), "%lf", &data ) != 1 )
+			data = 0.0;
+	}
+	return input;																		
+}
 
 inline const OutStream & operator<<( const OutStream & output, const f64 & data )	
 {																						

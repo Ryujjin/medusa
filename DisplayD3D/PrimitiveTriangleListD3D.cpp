@@ -1,33 +1,67 @@
 /*
 	PrimitiveTriangleListD3D.cpp
 	(c)2005 Palestar, Richard Lyle
+	Updated to DirectX 11
 */
- 
+
 #define USE_DRAW_INDEXED_PRIMITIVE		// undefine to use the slower DrawPrimitiveVB
 
+#include <d3d11.h>
+#include "Debug/Trace.h"
+#include "DisplayD3D/DisplayDeviceD3D.h"
 #include "DisplayD3D/PrimitiveTriangleListD3D.h"
 #include "DisplayD3D/PrimitiveFactory.h"
+
+// CRITICAL: Force TRACE output to Visual Studio Output window
+#undef TRACE  
+#define TRACE(msg) do { \
+	OutputDebugStringA("[TRIANGLES] "); \
+	OutputDebugStringA((const char*)(CharString() = msg)); \
+	OutputDebugStringA("\n"); \
+} while(0)
 
 //------------------------------------------------------------------------------------
 
 IMPLEMENT_PRIMITIVE_FACTORY( PrimitiveTriangleListD3D );
 
-PrimitiveTriangleListD3D::PrimitiveTriangleListD3D() : m_VB( NULL )
+PrimitiveTriangleListD3D::PrimitiveTriangleListD3D() : m_VB( NULL ), m_VBSize( 0 )
 {}
 
 bool PrimitiveTriangleListD3D::execute()
 {
 	int triangleCount = m_VBSize / 3;
-	if ( triangleCount > 0 )
+	if ( triangleCount > 0 && m_VB )
 	{
-		LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
-		if ( d3dd->SetFVF(D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1 ) != D3D_OK )
+		DisplayDeviceD3D* pDisplayD3D = (DisplayDeviceD3D*)m_pDevice;
+		if (!pDisplayD3D || !pDisplayD3D->getContext())
 			return false;
-		if ( d3dd->SetStreamSource( 0, m_VB, 0, sizeof(Vertex) ) != D3D_OK )
-			return false;
-		if ( d3dd->DrawPrimitive( D3DPT_TRIANGLELIST, 0, triangleCount ) != D3D_OK )
-			return false;
+
+		ID3D11DeviceContext* pContext = pDisplayD3D->getContext();
+
+		TRACE(CharString().format("PrimitiveTriangleListD3D::execute() - Drawing %d triangles (%d vertices)", 
+			triangleCount, m_VBSize));
+
+		// Set vertex buffer
+		UINT stride = sizeof(Vertex);
+		UINT offset = 0;
+		pContext->IASetVertexBuffers(0, 1, &m_VB, &stride, &offset);
+
+		// Set input layout for Vertex type
+		if (pDisplayD3D->m_pInputLayouts[DisplayDeviceD3D::VB_VERTEX].Get())
+			pContext->IASetInputLayout(pDisplayD3D->m_pInputLayouts[DisplayDeviceD3D::VB_VERTEX].Get());
+
+		// Set primitive topology
+		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		// Draw
+		pContext->Draw(m_VBSize, 0);
+
 		DisplayDevice::sm_nTrianglesRendered += triangleCount;
+	}
+	else
+	{
+		if (triangleCount > 0)
+			TRACE("PrimitiveTriangleListD3D::execute() - WARNING: No vertex buffer!");
 	}
 
 	return true;
@@ -38,30 +72,39 @@ void PrimitiveTriangleListD3D::clear()
 
 void PrimitiveTriangleListD3D::release()
 {
-	RELEASEDD( m_VB );
+	if (m_VB) {
+		m_VB->Release();
+		m_VB = NULL;
+	}
 }
 
 bool PrimitiveTriangleListD3D::initialize( int triangleCount, const Triangle * pTriangles )
 {
-	RELEASEDD( m_VB );
+	RELEASEDD(m_VB);
 
-	LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
+	DisplayDeviceD3D* pDisplayD3D = (DisplayDeviceD3D*)m_pDevice;
+	if (!pDisplayD3D || !pDisplayD3D->getDevice())
+		return false;
+
+	ID3D11Device* pDevice = pDisplayD3D->getDevice();
 
 	m_VBSize = triangleCount * 3;
 
-	dword vbSize = m_VBSize * sizeof(Vertex);
-	if ( d3dd->CreateVertexBuffer( vbSize, D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1, 
-		D3DPOOL_MANAGED, &m_VB, NULL ) != D3D_OK )
-		return false;
-	
-	byte * pBuffer;
-	if ( m_VB->Lock( 0, vbSize, (void **)&pBuffer, 0 ) != D3D_OK )
-		return false;
-	memcpy( pBuffer, pTriangles, vbSize );
-	m_VB->Unlock();
+	// Create vertex buffer
+	D3D11_BUFFER_DESC bufferDesc = {};
+	bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+	bufferDesc.ByteWidth = m_VBSize * sizeof(Vertex);
+	bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	bufferDesc.CPUAccessFlags = 0;
 
-	//TRACE( CharString().format("PrimitiveTriangleListD3D::initialize, m_VBSize = %d", m_VBSize ) );
-	return true;
+	D3D11_SUBRESOURCE_DATA initData = {};
+	initData.pSysMem = pTriangles;
+
+	HRESULT hr;
+	try { hr = pDevice->CreateBuffer(&bufferDesc, &initData, &m_VB); }
+	catch (...) { hr = E_FAIL; m_VB = NULL; LOG_ERROR("PrimitiveTriangleListD3D", "Exception creating VB"); }
+	if (FAILED(hr) && m_VB != NULL) m_VB = NULL;
+	return SUCCEEDED(hr);
 }
 
 //----------------------------------------------------------------------------
@@ -71,18 +114,30 @@ IMPLEMENT_PRIMITIVE_FACTORY( PrimitiveTriangleListDD3D );
 PrimitiveTriangleListDD3D::PrimitiveTriangleListDD3D() : m_pTriangles( NULL ), m_TriangleCount( 0 )
 {}
 
-bool PrimitiveTriangleListDD3D::execute( )
+bool PrimitiveTriangleListDD3D::execute()
 {
-	if ( m_TriangleCount > 0 )
+	if (m_TriangleCount > 0)
 	{
-		int vbOffset = ((DisplayDeviceD3D *)m_pDevice)->setupDVB(
-			DisplayDeviceD3D::VB_VERTEX, m_TriangleCount * 3, m_pTriangles );
-		if ( vbOffset < 0 )
+		DisplayDeviceD3D* pDisplayD3D = (DisplayDeviceD3D*)m_pDevice;
+		if (!pDisplayD3D || !pDisplayD3D->getContext())
 			return false;
 
-		LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
-		if ( d3dd->DrawPrimitive( D3DPT_TRIANGLELIST, vbOffset, m_TriangleCount ) != D3D_OK )
+		int vbOffset = pDisplayD3D->setupDVB(
+			DisplayDeviceD3D::VB_VERTEX, m_TriangleCount * 3, m_pTriangles);
+		if (vbOffset < 0)
 			return false;
+
+		ID3D11DeviceContext* pContext = pDisplayD3D->getContext();
+
+		// Set input layout for Vertex type
+		if (pDisplayD3D->m_pInputLayouts[DisplayDeviceD3D::VB_VERTEX].Get())
+			pContext->IASetInputLayout(pDisplayD3D->m_pInputLayouts[DisplayDeviceD3D::VB_VERTEX].Get());
+
+		// Set primitive topology
+		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		// Draw
+		pContext->Draw(m_TriangleCount * 3, vbOffset);
 
 		DisplayDevice::sm_nTrianglesRendered += m_TriangleCount;
 	}
@@ -134,17 +189,32 @@ PrimitiveTriangleListID3D::PrimitiveTriangleListID3D() : m_VB( NULL ), m_VBI( NU
 
 bool PrimitiveTriangleListID3D::execute()
 {
-	if ( m_Triangles > 0 )
+	if ( m_Triangles > 0 && m_VB && m_VBI )
 	{
-		LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
-		if ( d3dd->SetFVF(D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1 ) != D3D_OK )
+		DisplayDeviceD3D* pDisplayD3D = (DisplayDeviceD3D *)m_pDevice;
+		if (!pDisplayD3D || !pDisplayD3D->getContext())
 			return false;
-		if ( d3dd->SetStreamSource( 0, m_VB, 0, sizeof(Vertex) ) != D3D_OK )
-			return false;
-		if ( d3dd->SetIndices( m_VBI ) != D3D_OK )
-			return false;
-		if ( d3dd->DrawIndexedPrimitive( D3DPT_TRIANGLELIST, 0, 0, m_Verts, 0, m_Triangles ) != D3D_OK )
-			return false;
+
+		ID3D11DeviceContext* pContext = pDisplayD3D->getContext();
+
+		// Set vertex buffer
+		UINT stride = sizeof(Vertex);
+		UINT offset = 0;
+		pContext->IASetVertexBuffers(0, 1, &m_VB, &stride, &offset);
+
+		// Set index buffer
+		pContext->IASetIndexBuffer(m_VBI, DXGI_FORMAT_R16_UINT, 0);
+
+		// Set input layout for Vertex type
+		if (pDisplayD3D->m_pInputLayouts[DisplayDeviceD3D::VB_VERTEX].Get())
+			pContext->IASetInputLayout(pDisplayD3D->m_pInputLayouts[DisplayDeviceD3D::VB_VERTEX].Get());
+
+		// Set primitive topology
+		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		// Draw indexed
+		pContext->DrawIndexed(m_Triangles * 3, 0, 0);
+
 		DisplayDevice::sm_nTrianglesRendered += m_Triangles;
 	}
 	return true;
@@ -155,16 +225,24 @@ void PrimitiveTriangleListID3D::clear()
 
 void PrimitiveTriangleListID3D::release()
 {
-	RELEASEDD( m_VB );
-	RELEASEDD( m_SystemVB );
-	RELEASEDD( m_VBI );
+	if (m_VB) {
+		m_VB->Release();
+		m_VB = NULL;
+	}
+	if (m_SystemVB) {
+		m_SystemVB->Release();
+		m_SystemVB = NULL;
+	}
+	if (m_VBI) {
+		m_VBI->Release();
+		m_VBI = NULL;
+	}
 }
 
 bool PrimitiveTriangleListID3D::initialize( int triangleCount, const Triangle * pTriangles )
 {
 	release();
 
-	//TRACE( CharString().format("PrimitiveTriangleListID3D::initialize, building index table from %d triangles...", triangleCount ) );
 	m_Triangles = triangleCount;
 
 	// create the vertex array
@@ -178,7 +256,7 @@ bool PrimitiveTriangleListID3D::initialize( int triangleCount, const Triangle * 
 		for(int j=0;j<3;j++)
 		{
 			const Vertex & vert = pTriangles[i].v[j];
-	
+
 			vbi[ index ] = 0xffff;
 
 			// check the verts array for a vertex that matches
@@ -207,35 +285,43 @@ bool PrimitiveTriangleListID3D::initialize( int triangleCount, const Triangle * 
 
 	m_Verts = verts.size();
 
-	LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
+	ID3D11Device* d3dDevice = ((DisplayDeviceD3D *)m_pDevice)->getDevice();
 
-	dword vbSize = m_Verts * sizeof(Vertex);
-	if ( d3dd->CreateVertexBuffer( vbSize, D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1, 
-		D3DPOOL_MANAGED, &m_VB, NULL ) != D3D_OK )
+	// Create vertex buffer
+	D3D11_BUFFER_DESC vbDesc = {};
+	vbDesc.Usage = D3D11_USAGE_DEFAULT;
+	vbDesc.ByteWidth = m_Verts * sizeof(Vertex);
+	vbDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	vbDesc.CPUAccessFlags = 0;
+
+	D3D11_SUBRESOURCE_DATA vbInitData = {};
+	vbInitData.pSysMem = verts.buffer();
+
+	HRESULT hr;
+	try { hr = d3dDevice->CreateBuffer(&vbDesc, &vbInitData, &m_VB); }
+	catch (...) { hr = E_FAIL; m_VB = NULL; LOG_ERROR("PrimitiveTriangleListD3D", "Exception VB #1"); }
+	if (FAILED(hr)) { if (m_VB) m_VB = NULL; return false; }
+
+	// Create index buffer
+	D3D11_BUFFER_DESC ibDesc = {};
+	ibDesc.Usage = D3D11_USAGE_DEFAULT;
+	ibDesc.ByteWidth = vbi.size() * sizeof(word);
+	ibDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	ibDesc.CPUAccessFlags = 0;
+
+	D3D11_SUBRESOURCE_DATA ibInitData = {};
+	ibInitData.pSysMem = vbi.buffer();
+
+	// Reuse hr from above
+	try { hr = d3dDevice->CreateBuffer(&ibDesc, &ibInitData, &m_VBI); }
+	catch (...) { hr = E_FAIL; m_VBI = NULL; LOG_ERROR("PrimitiveTriangleListD3D", "Exception IB #1"); }
+	if (FAILED(hr))
+	{
+		if (m_VBI) m_VBI = NULL;
+		RELEASEDD(m_VB);
 		return false;
-	
-	byte * pBuffer = NULL;
-	if ( m_VB->Lock( 0, vbSize, (void **)&pBuffer, 0 ) != D3D_OK )
-		return false;
+	}
 
-	for(int i=0;i<m_Verts;i++)
-		((Vertex *)pBuffer)[i] = verts[i];
-
-	m_VB->Unlock();
-
-	dword vbiSize = vbi.size() * sizeof(word);
-	if ( d3dd->CreateIndexBuffer( vbiSize, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_MANAGED, &m_VBI, NULL ) != D3D_OK )
-		return false;
-
-	if ( m_VBI->Lock( 0, vbiSize, (void **)&pBuffer, 0 ) != D3D_OK )
-		return false;
-
-	for(int i=0;i<vbi.size();i++)
-		((word *)pBuffer)[i] = vbi[i];
-
-	m_VBI->Unlock();
-
-	//TRACE( CharString().format("PrimitiveTriangleListID3D::initialize, m_Triangles = %d, m_Verts = %d", m_Triangles, m_Verts ) );
 	return true;
 }
 
@@ -244,133 +330,106 @@ bool PrimitiveTriangleListID3D::initialize( int triangleCount, const word * pTri
 {
 	release();
 
-	LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
+	ID3D11Device* d3dDevice = ((DisplayDeviceD3D *)m_pDevice)->getDevice();
 
 	m_Triangles = triangleCount;
 	m_Verts = vertexCount;
 
-	dword vbSize = m_Verts * sizeof(Vertex);
-	if ( d3dd->CreateVertexBuffer( vbSize, D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1, 
-		D3DPOOL_MANAGED, &m_VB, NULL ) != D3D_OK )
-		return false;
-	
-	byte * pBuffer;
-	if ( m_VB->Lock( 0, vbSize, (void **)&pBuffer, 0 ) != D3D_OK )
-		return false;
-	memcpy( pBuffer, pVerticies, vbSize );
-	m_VB->Unlock();
+	// Create vertex buffer
+	D3D11_BUFFER_DESC vbDesc = {};
+	vbDesc.Usage = D3D11_USAGE_DEFAULT;
+	vbDesc.ByteWidth = m_Verts * sizeof(Vertex);
+	vbDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	vbDesc.CPUAccessFlags = 0;
 
-	dword vbi = m_Triangles * 3;
-	dword vbiSize = vbi * sizeof(word);
-	if ( d3dd->CreateIndexBuffer( vbiSize, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_MANAGED, &m_VBI, NULL ) != D3D_OK )
-		return false;
+	D3D11_SUBRESOURCE_DATA vbInitData = {};
+	vbInitData.pSysMem = pVerticies;
 
-	if ( m_VBI->Lock( 0, vbiSize, (void **)&pBuffer, 0 ) != D3D_OK )
-		return false;
-	memcpy( pBuffer, pTriangles, vbiSize );
-	m_VBI->Unlock();
+	HRESULT hr;
+	try { hr = d3dDevice->CreateBuffer(&vbDesc, &vbInitData, &m_VB); }
+	catch (...) { hr = E_FAIL; m_VB = NULL; LOG_ERROR("PrimitiveTriangleListD3D", "Exception VB #2"); }
+	if (FAILED(hr)) { if (m_VB) m_VB = NULL; return false; }
 
-	//TRACE( CharString().format("PrimitiveTriangleListID3D::initialize, m_Triangles = %d, m_Verts = %d", m_Triangles, m_Verts ) );
+	// Create index buffer
+	D3D11_BUFFER_DESC ibDesc = {};
+	ibDesc.Usage = D3D11_USAGE_DEFAULT;
+	ibDesc.ByteWidth = m_Triangles * 3 * sizeof(word);
+	ibDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	ibDesc.CPUAccessFlags = 0;
+
+	D3D11_SUBRESOURCE_DATA ibInitData = {};
+	ibInitData.pSysMem = pTriangles;
+
+	if (FAILED(d3dDevice->CreateBuffer(&ibDesc, &ibInitData, &m_VBI)))
+	{
+		RELEASEDD(m_VB);
+		return false;
+	}
+
 	return true;
 }
 
 bool PrimitiveTriangleListID3D::initialize( int triangleCount, const word * pTriangles,
 								PrimitiveTriangleListI * pVerts )
 {
-	LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
+	ID3D11Device* d3dDevice = ((DisplayDeviceD3D *)m_pDevice)->getDevice();
 
 	release();
 
 	m_Triangles = triangleCount;
-	m_Verts = ((PrimitiveTriangleListID3D *)pVerts)->m_Verts;	
+	m_Verts = ((PrimitiveTriangleListID3D *)pVerts)->m_Verts;
 
-	// share the vertex buffer with the other primitive
+	// Share vertex buffer from pVerts
 	m_VB = ((PrimitiveTriangleListID3D *)pVerts)->m_VB;
-	if ( !m_VB )
-		return false;
-	m_VB->AddRef();
+	if (m_VB)
+		m_VB->AddRef();
 
-	dword vbi = m_Triangles * 3;
-	dword vbiSize = vbi * sizeof(word);
-	if ( d3dd->CreateIndexBuffer( vbiSize, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_MANAGED, &m_VBI, NULL ) != D3D_OK )
-		return false;
+	// Create index buffer
+	D3D11_BUFFER_DESC ibDesc = {};
+	ibDesc.Usage = D3D11_USAGE_DEFAULT;
+	ibDesc.ByteWidth = m_Triangles * 3 * sizeof(word);
+	ibDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	ibDesc.CPUAccessFlags = 0;
 
-	byte * pBuffer;
-	if ( m_VBI->Lock( 0, vbiSize, (void **)&pBuffer, 0 ) != D3D_OK )
-		return false;
-	memcpy( pBuffer, pTriangles, vbiSize );
-	m_VBI->Unlock();
+	D3D11_SUBRESOURCE_DATA ibInitData = {};
+	ibInitData.pSysMem = pTriangles;
 
-	//TRACE( CharString().format("PrimitiveTriangleListID3D::initialize, m_Triangles = %d, m_Verts = %d (%p)", m_Triangles, m_Verts, pVerts ) );
+	if (FAILED(d3dDevice->CreateBuffer(&ibDesc, &ibInitData, &m_VBI)))
+	{
+		RELEASEDD(m_VB);
+		return false;
+	}
+
 	return true;
 }
 
-bool PrimitiveTriangleListID3D::createOptimizedVB( LPDIRECT3DDEVICE9 d3dd, int triangleCount, const word * pTriangles )
+bool PrimitiveTriangleListID3D::createOptimizedVB( ID3D11Device* d3dDevice, int triangleCount, const word * pTriangles )
 {
 	ASSERT( m_SystemVB );
 
 	m_Triangles = triangleCount;
 
-	// get the system vertex buffer info
-	D3DVERTEXBUFFER_DESC svbd;
-	m_SystemVB->GetDesc( &svbd );
-	// calculate the number of verticies in this buffer
-	int vertexCount = svbd.Size / sizeof(Vertex );
-	
-	// lock the system vertex buffer
-	Vertex * pVerticies = NULL;
-	if ( m_SystemVB->Lock( 0, svbd.Size, (void **)&pVerticies, 0 ) != D3D_OK )
+	// Create optimized vertex buffer from system memory buffer
+	D3D11_BUFFER_DESC vbDesc = {};
+	vbDesc.Usage = D3D11_USAGE_DEFAULT;
+	vbDesc.ByteWidth = m_Verts * sizeof(Vertex);
+	vbDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	vbDesc.CPUAccessFlags = 0;
+
+	// Copy data from system VB
+	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	DisplayDeviceD3D* pDisplayD3D = (DisplayDeviceD3D*)m_pDevice;
+	if (FAILED(pDisplayD3D->getContext()->Map(m_SystemVB, 0, D3D11_MAP_READ, 0, &mappedResource)))
 		return false;
 
-	// initialize the remap array
-	Array< int > remap( vertexCount );
-	for(int i=0;i<remap.size();i++)
-		remap[i] = -1;
+	D3D11_SUBRESOURCE_DATA vbInitData = {};
+	vbInitData.pSysMem = mappedResource.pData;
 
-	// initialize the culled verts array
-	Array< Vertex > culled;
-	//culled.setGrowSize( vertexCount );
+	HRESULT hr = d3dDevice->CreateBuffer(&vbDesc, &vbInitData, &m_VB);
 
-	// create the index buffer, cull and sort the veritices while initializing the index buffer
-	dword vbi = m_Triangles * 3;
-	dword vbiSize = vbi * sizeof(word);
-	if ( d3dd->CreateIndexBuffer( vbiSize, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_MANAGED, &m_VBI, NULL ) != D3D_OK )
-		return false;
+	pDisplayD3D->getContext()->Unmap(m_SystemVB, 0);
 
-	byte * pBuffer = NULL;
-	if ( m_VBI->Lock( 0, vbiSize, (void **)&pBuffer, 0 ) != D3D_OK )
-		return false;
-
-	for(dword j=0;j<vbi;j++)
-	{
-		word v = pTriangles[j];
-		if ( remap[v] < 0 )
-		{
-			remap[v] = culled.size();
-			culled.push( pVerticies[v] );
-		}
-
-		((word *)pBuffer)[j] = remap[v];
-	}
-	m_VBI->Unlock();
-
-	// create the optmized vertex buffer
-	m_Verts = culled.size();
-	dword vbSize = m_Verts * sizeof(Vertex);
-	if ( d3dd->CreateVertexBuffer( vbSize, D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1, 
-		D3DPOOL_MANAGED, &m_VB, NULL ) != D3D_OK )
-		return false;
-	
-	if ( m_VB->Lock( 0, vbSize, (void **)&pBuffer, 0 ) != D3D_OK )
-		return false;
-
-	for(int i=0;i<culled.size();i++)
-		((Vertex *)pBuffer)[i] = culled[i];
-
-	m_VB->Unlock();
-	m_SystemVB->Unlock();
-
-	return true;
+	return SUCCEEDED(hr);
 }
 
 //----------------------------------------------------------------------------
@@ -383,15 +442,34 @@ PrimitiveTriangleListLD3D::PrimitiveTriangleListLD3D() : m_VB( NULL ), m_VBSize(
 bool PrimitiveTriangleListLD3D::execute()
 {
 	int triangleCount = m_VBSize / 3;
-	if ( triangleCount > 0 )
+	if ( triangleCount > 0 && m_VB )
 	{
-		LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
-		if ( d3dd->SetFVF( D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX1 ) != D3D_OK )
+		DisplayDeviceD3D* pDisplayD3D = (DisplayDeviceD3D*)m_pDevice;
+		if (!pDisplayD3D || !pDisplayD3D->getContext())
 			return false;
-		if ( d3dd->SetStreamSource( 0, m_VB, 0, sizeof(VertexL) ) != D3D_OK )
-			return false;
-		if ( d3dd->DrawPrimitive( D3DPT_TRIANGLELIST, 0, triangleCount ) != D3D_OK )
-			return false;
+
+		ID3D11DeviceContext* pContext = pDisplayD3D->getContext();
+
+		// Set vertex buffer
+		UINT stride = sizeof(VertexL);
+		UINT offset = 0;
+		pContext->IASetVertexBuffers(0, 1, &m_VB, &stride, &offset);
+
+		// Set input layout for VertexL type
+		if (pDisplayD3D->m_pInputLayouts[DisplayDeviceD3D::VB_VERTEXL].Get())
+			pContext->IASetInputLayout(pDisplayD3D->m_pInputLayouts[DisplayDeviceD3D::VB_VERTEXL].Get());
+
+		// Switch to VS_MainL so per-vertex color (diffuse + alpha) reaches the shader.
+		// apply() binds VS_Main; applyVertexL() patches just the VS and input layout.
+		if (pDisplayD3D->m_pMatShader.valid())
+			pDisplayD3D->m_pMatShader->applyVertexL(pDisplayD3D);
+
+		// Set primitive topology
+		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		// Draw
+		pContext->Draw(m_VBSize, 0);
+
 		DisplayDevice::sm_nTrianglesRendered += triangleCount;
 	}
 	return true;
@@ -402,7 +480,10 @@ void PrimitiveTriangleListLD3D::clear()
 
 void PrimitiveTriangleListLD3D::release()
 {
-	RELEASEDD( m_VB );
+	if (m_VB) {
+		m_VB->Release();
+		m_VB = NULL;
+	}
 	m_VBSize = 0;
 }
 
@@ -412,23 +493,26 @@ bool PrimitiveTriangleListLD3D::initialize( int triangleCount, const TriangleL *
 
 	release();
 
-	LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
+	DisplayDeviceD3D* pDisplayD3D = (DisplayDeviceD3D*)m_pDevice;
+	if (!pDisplayD3D || !pDisplayD3D->getDevice())
+		return false;
+
+	ID3D11Device* pDevice = pDisplayD3D->getDevice();
 
 	m_VBSize = triangleCount * 3;
 
-	dword vbSize = m_VBSize * sizeof(VertexL);
-	if ( d3dd->CreateVertexBuffer( vbSize, D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX1, 
-		D3DPOOL_MANAGED, &m_VB, NULL ) != D3D_OK )
-		return false;
-	
-	byte * pBuffer;
-	if ( m_VB->Lock( 0, vbSize, (void **)&pBuffer, 0 ) != D3D_OK )
-		return false;
-	memcpy( pBuffer, pTriangles, vbSize );
-	m_VB->Unlock();
+	// Create vertex buffer
+	D3D11_BUFFER_DESC bufferDesc = {};
+	bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+	bufferDesc.ByteWidth = m_VBSize * sizeof(VertexL);
+	bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	bufferDesc.CPUAccessFlags = 0;
 
-	//TRACE( CharString().format("PrimitiveTriangleListLD3D::initialize, m_VBSize = %d", m_VBSize ) );
-	return true;
+	D3D11_SUBRESOURCE_DATA initData = {};
+	initData.pSysMem = pTriangles;
+
+	HRESULT hr = pDevice->CreateBuffer(&bufferDesc, &initData, &m_VB);
+	return SUCCEEDED(hr);
 }
 
 //----------------------------------------------------------------------------
@@ -442,14 +526,31 @@ bool PrimitiveTriangleListDLD3D::execute()
 {
 	if ( m_TriangleCount > 0 )
 	{
-		int vbOffset = ((DisplayDeviceD3D *)m_pDevice)->setupDVB( 
+		DisplayDeviceD3D* pDisplayD3D = (DisplayDeviceD3D*)m_pDevice;
+		if (!pDisplayD3D || !pDisplayD3D->getContext())
+			return false;
+
+		int vbOffset = pDisplayD3D->setupDVB( 
 			DisplayDeviceD3D::VB_VERTEXL, m_TriangleCount * 3, m_pTriangles );
 		if ( vbOffset < 0 )
 			return false;
 
-		LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
-		if ( d3dd->DrawPrimitive( D3DPT_TRIANGLELIST, vbOffset, m_TriangleCount ) != D3D_OK )
-			return false;
+		ID3D11DeviceContext* pContext = pDisplayD3D->getContext();
+
+		// Set input layout for VertexL type
+		if (pDisplayD3D->m_pInputLayouts[DisplayDeviceD3D::VB_VERTEXL].Get())
+			pContext->IASetInputLayout(pDisplayD3D->m_pInputLayouts[DisplayDeviceD3D::VB_VERTEXL].Get());
+
+		// Switch to VS_MainL so per-vertex color (diffuse + alpha) reaches the shader.
+		// apply() binds VS_Main; applyVertexL() patches just the VS and input layout.
+		if (pDisplayD3D->m_pMatShader.valid())
+			pDisplayD3D->m_pMatShader->applyVertexL(pDisplayD3D);
+
+		// Set primitive topology
+		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		// Draw with vbOffset from setupDVB
+		pContext->Draw(m_TriangleCount * 3, vbOffset);
 
 		DisplayDevice::sm_nTrianglesRendered += m_TriangleCount;
 	}
@@ -501,15 +602,29 @@ PrimitiveTriangleListTLD3D::PrimitiveTriangleListTLD3D() : m_VB( NULL )
 bool PrimitiveTriangleListTLD3D::execute()
 {
 	int triangleCount = m_VBSize / 3;
-	if ( triangleCount > 0 )
+	if ( triangleCount > 0 && m_VB )
 	{
-		LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
-		if ( d3dd->SetFVF( D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1 ) != D3D_OK )
+		DisplayDeviceD3D* pDisplayD3D = (DisplayDeviceD3D*)m_pDevice;
+		if (!pDisplayD3D || !pDisplayD3D->getContext())
 			return false;
-		if ( d3dd->SetStreamSource( 0, m_VB, 0, sizeof(VertexTL) ) != D3D_OK )
+
+		ID3D11DeviceContext* pContext = pDisplayD3D->getContext();
+
+		// Apply UI shader for screen-space vertices
+		if (!pDisplayD3D->applyUIShader())
 			return false;
-		if ( d3dd->DrawPrimitive( D3DPT_TRIANGLELIST, 0, triangleCount ) != D3D_OK )
-			return false;
+
+		// Set vertex buffer
+		UINT stride = sizeof(VertexTL);
+		UINT offset = 0;
+		pContext->IASetVertexBuffers(0, 1, &m_VB, &stride, &offset);
+
+		// Set primitive topology
+		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		// Draw
+		pContext->Draw(m_VBSize, 0);
+
 		DisplayDevice::sm_nTrianglesRendered += triangleCount;
 	}
 	return true;
@@ -520,30 +635,36 @@ void PrimitiveTriangleListTLD3D::clear()
 
 void PrimitiveTriangleListTLD3D::release()
 {
-	RELEASEDD( m_VB );
+	if (m_VB) {
+		m_VB->Release();
+		m_VB = NULL;
+	}
 }
 
 bool PrimitiveTriangleListTLD3D::initialize( int triangleCount, const TriangleTL * pTriangles )
 {
 	release();
 
-	LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
+	DisplayDeviceD3D* pDisplayD3D = (DisplayDeviceD3D*)m_pDevice;
+	if (!pDisplayD3D || !pDisplayD3D->getDevice())
+		return false;
+
+	ID3D11Device* pDevice = pDisplayD3D->getDevice();
 
 	m_VBSize = triangleCount * 3;
 
-	dword vbSize = m_VBSize * sizeof(VertexTL);
-	if ( d3dd->CreateVertexBuffer( vbSize, D3DUSAGE_WRITEONLY, D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1, 
-		D3DPOOL_MANAGED, &m_VB, NULL ) != D3D_OK )
-		return false;
-	
-	byte * pBuffer;
-	if ( m_VB->Lock( 0, vbSize, (void **)&pBuffer, 0 ) != D3D_OK )
-		return false;
-	memcpy( pBuffer, pTriangles, vbSize );
-	m_VB->Unlock();
+	// Create vertex buffer
+	D3D11_BUFFER_DESC bufferDesc = {};
+	bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+	bufferDesc.ByteWidth = m_VBSize * sizeof(VertexTL);
+	bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	bufferDesc.CPUAccessFlags = 0;
 
-	//TRACE( CharString().format("PrimitiveTriangleListTLD3D::initializeVB, m_VBSize = %d", m_VBSize ) );
-	return true;
+	D3D11_SUBRESOURCE_DATA initData = {};
+	initData.pSysMem = pTriangles;
+
+	HRESULT hr = pDevice->CreateBuffer(&bufferDesc, &initData, &m_VB);
+	return SUCCEEDED(hr);
 }
 
 //----------------------------------------------------------------------------
@@ -557,14 +678,26 @@ bool PrimitiveTriangleListDTLD3D::execute()
 {
 	if ( m_TriangleCount > 0 )
 	{
-		int vbOffset = ((DisplayDeviceD3D *)m_pDevice)->setupDVB( 
+		DisplayDeviceD3D* pDisplayD3D = (DisplayDeviceD3D*)m_pDevice;
+		if (!pDisplayD3D || !pDisplayD3D->getContext())
+			return false;
+
+		int vbOffset = pDisplayD3D->setupDVB( 
 			DisplayDeviceD3D::VB_VERTEXTL, m_TriangleCount * 3, m_pTriangles );
 		if ( vbOffset < 0 )
 			return false;
 
-		LPDIRECT3DDEVICE9 d3dd = ((DisplayDeviceD3D *)m_pDevice)->m_pD3DD;
-		if ( d3dd->DrawPrimitive( D3DPT_TRIANGLELIST, vbOffset, m_TriangleCount ) != D3D_OK )
+		ID3D11DeviceContext* pContext = pDisplayD3D->getContext();
+
+		// Apply UI shader for screen-space vertices
+		if (!pDisplayD3D->applyUIShader())
 			return false;
+
+		// Set primitive topology
+		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		// Draw with vbOffset from setupDVB
+		pContext->Draw(m_TriangleCount * 3, vbOffset);
 
 		DisplayDevice::sm_nTrianglesRendered += m_TriangleCount;
 	}
@@ -608,4 +741,5 @@ void PrimitiveTriangleListDTLD3D::unlock()
 
 //------------------------------------------------------------------------------------
 // EOF
+
 

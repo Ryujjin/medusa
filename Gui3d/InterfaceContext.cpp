@@ -434,10 +434,22 @@ bool InterfaceContext::render()
 	// setup the context
 	m_Context.setTime( m_Time );
 	m_Context.setBits( m_Bits );
-	m_Context.setProjection( window, PI / 4, 1.0f, 32768.0f );
+	//m_Context.setProjection( window, PI / 4, 1.0f, 32768.0f ); //SAG changed fro 32768 to 5000000 for space scenes, and changed FOV from 45 to 75 degrees for a more modern wide view
+	m_Context.setProjection(window, PI*5/12, 1.0f, 5000000.0f);
+
+	//Degrees	Radians expression	Feel
+	//	45°	PI / 4	Current(narrow)
+	//	60°	PI / 3	More open, classic
+	//	75°	PI * 5 / 12	Wide, modern default
+	//	90°	PI / 2	Very wide
+
 	
 	// render the scene
 	m_Context.beginRender( Color(0,0,0), Color(0,0,0) );
+	// CRITICAL: Start the first scene immediately so the render target is bound
+	// before any UI windows flush via endScene() (e.g., ViewTactical line 1069).
+	// Without this, the first endScene() draws into the void on frame 0.
+	m_Context.beginScene();
 	m_Context.render( m_pRootWindow );
 
 	// render the cursor
@@ -502,7 +514,6 @@ bool InterfaceContext::render()
 			Font::push( pDisplay, pFont, tipPosition, m_sCursorTip, WHITE );
 		}
 	}
-
 	PROFILE_END();
 
 	// display the frames per second

@@ -7,6 +7,7 @@
 
 #define MEDUSA_TRACE_ON
 
+
 #include "Shader.h"
 #include "DisplayDeviceD3D.h"
 #include "PrimitiveSetTransformD3D.h"

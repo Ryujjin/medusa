@@ -7,7 +7,8 @@
 #define PRIMITIVE_FACTORY_H
 
 #include "Debug/Assert.h"
-#include "DisplayD3D/DisplayDeviceD3D.h"
+#include "Display/DevicePrimitive.h"
+#include "Standard/List.h"
 
 //---------------------------------------------------------------------------------------
 
@@ -20,13 +21,14 @@ public:
 	// Construction
 	BasePrimitiveFactory( const PrimitiveKey &key );
 	virtual ~BasePrimitiveFactory();
-	
+
 	// Mutators
 	virtual DevicePrimitive *		create() = 0;		// get primitive, creating a new one if needed or using a cached one
 	virtual void					release() = 0;				// release all cached primitives
 
 	// Static
 	static BasePrimitiveFactory *	findFactory( const PrimitiveKey &key );
+	static void						initializeFactories();		// ensure all factories are initialized
 
 private:
 	// Data
@@ -111,7 +113,7 @@ private:
 //---------------------------------------------------------------------------------------
 
 #define IMPLEMENT_PRIMITIVE_FACTORY( thisClass )					\
-	    static PrimitiveFactory<thisClass> g_##thisClass##Factory;
+	    PrimitiveFactory<thisClass> g_##thisClass##Factory;
 
 //---------------------------------------------------------------------------------------
 

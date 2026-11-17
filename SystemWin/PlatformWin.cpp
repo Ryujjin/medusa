@@ -432,6 +432,24 @@ bool PlatformWin::update()
 	::GetCursorPos( &pt );
 	::ScreenToClient( m_hWnd, &pt );
 
+	// Scale the cursor from logical (DPI-scaled) pixels to render (physical pixel) space.
+	// This is needed in both windowed and fullscreen modes when Windows DPI scaling causes
+	// the client area to differ from the render resolution (m_Mode.screenSize).
+	{
+		RECT rc;
+		::GetClientRect( m_hWnd, &rc );
+		int nClientW = rc.right - rc.left;
+		int nClientH = rc.bottom - rc.top;
+		const DisplayDevice::Mode * pMode = display()->activeMode();
+		if ( pMode != NULL && nClientW > 0 && nClientH > 0
+			&& ( nClientW != pMode->screenSize.width
+			  || nClientH != pMode->screenSize.height ) )
+		{
+			pt.x = (int)( (float)pt.x * pMode->screenSize.width  / nClientW );
+			pt.y = (int)( (float)pt.y * pMode->screenSize.height / nClientH );
+		}
+	}
+
 	PointInt ptCurrentCursor( pt.x, pt.y );
 	if ( ptCurrentCursor != m_CursorPosition )
 	{
@@ -446,6 +464,23 @@ bool PlatformWin::update()
 			POINT ptRestore;
 			ptRestore.x = m_CursorPosition.x;
 			ptRestore.y = m_CursorPosition.y;
+			// Inverse DPI scale: m_CursorPosition is in render (physical pixel) space,
+			// but ClientToScreen expects client (logical) pixel coords. Convert back.
+			// Applied in both windowed and fullscreen modes (mirrors the forward scaling above).
+			{
+				RECT rc;
+				::GetClientRect( m_hWnd, &rc );
+				int nClientW = rc.right - rc.left;
+				int nClientH = rc.bottom - rc.top;
+				const DisplayDevice::Mode * pMode = display()->activeMode();
+				if ( pMode != NULL && nClientW > 0 && nClientH > 0
+					&& ( nClientW != pMode->screenSize.width
+					  || nClientH != pMode->screenSize.height ) )
+				{
+					ptRestore.x = (int)( (float)m_CursorPosition.x * nClientW / pMode->screenSize.width );
+					ptRestore.y = (int)( (float)m_CursorPosition.y * nClientH / pMode->screenSize.height );
+				}
+			}
 			::ClientToScreen( m_hWnd, &ptRestore );
 			::SetCursorPos( ptRestore.x, ptRestore.y );
 		}
@@ -482,10 +517,7 @@ bool PlatformWin::setHardwareCursor( Image::Link pImage, int nFrame )
 	}
 
 	if (! pImage.valid( true, false ) )
-	{
-		LOG_ERROR( "PlatformWin", "setHardwareCursor() called with invalid image." );
-		return false;
-	}
+		return false;	// image not yet loaded (async load triggered); caller will retry on next setCursorState
 
 	// create a new HCURSOR from our image and the given frame...
 	HDC hDC = ::GetDC( NULL );

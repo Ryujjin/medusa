@@ -941,7 +941,7 @@ void Noun::setDetach( bool bDetach /*= true*/ )
 
 Material * Noun::icon() const
 {
-	return WidgetCast<Material>( nounContext()->resource( "ICON" ) );
+	return WidgetCast<Material>( nounContext( false )->resource( "ICON", false ) );
 }
 
 //----------------------------------------------------------------------------

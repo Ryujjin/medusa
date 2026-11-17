@@ -1,6 +1,7 @@
 /*
 	PrimitiveLineListD3D.h
 	(c)2005 Palestar, Richard Lyle
+	Updated to DirectX 11
 */
 
 #ifndef PRIMITIVE_LINE_LIST_D3D_H 

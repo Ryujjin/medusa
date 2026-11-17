@@ -234,6 +234,7 @@ public:
 	static CharString				sm_sShadersPath;					// base directory of shader files
 	static bool						sm_bEnableShaderDebug;				// if true, then shaders are reloaded from disk when changed
 	static DisplayDevice *			sm_pCacheDevice;					// device for used to precache graphics assets...
+	static void					(*sm_pfnFlushPendingMaterials)(DisplayDevice*);	// drain pending material surfaces on render thread
 
 	static const char *				describeFSAA( FSAA eFSAA );
 	static FSAA						findFSAA( const char * pText );

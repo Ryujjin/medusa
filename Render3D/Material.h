@@ -136,6 +136,7 @@ public:
 	static PrimitiveSurface *
 					getSurface( DisplayDevice * pDisplay, Image::Link pImage, int nFrame, bool bMipMap );
 	static void		flushSurfaceCache();		// flush all cached surface primitives
+	static void		flushPendingDeviceSurfaces( DisplayDevice * pDevice );	// drain pending surfaces on the render thread
 
 protected:
 	// Types
@@ -194,6 +195,10 @@ protected:
 					sm_SurfaceHashLock;
 	static SurfaceHash
 					sm_SurfaceHash;
+	static CriticalSection
+					sm_PendingLock;
+	static Array<Ref>
+					sm_PendingMaterials;
 };
 
 IMPLEMENT_RAW_STREAMING( Material::Blending );

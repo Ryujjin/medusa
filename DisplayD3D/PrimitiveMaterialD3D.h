@@ -1,69 +1,71 @@
 /*
 	PrimitiveMaterialD3D.h
 	(c)2005 Palestar, Richard Lyle
+	Updated to DirectX 11
 */
 
-#ifndef PRIMITIVE_MATERIAL_D3D_H
-#define PRIMITIVE_MATERIAL_D3D_H
+#ifndef PRIMITIVEMATERIALD3D_H
+#define PRIMITIVEMATERIALD3D_H
 
 #include "Display/PrimitiveMaterial.h"
 #include "Display/PrimitiveSetTransform.h"
 #include "DisplayDeviceD3D.h"
+#include "ShaderD3D11.h"
 
-//----------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------
 
 class PrimitiveMaterialD3D : public PrimitiveMaterial
 {
 public:
-	// Constructions
+	DECLARE_DEVICE_PRIMITIVE();
+
+	// Construction
 	PrimitiveMaterialD3D();
 
 	// DevicePrimitive interface
-	bool					execute();
-	void					clear();
-	void					release();
+	bool				execute();
+	void				clear();
+	void				release();
 
-	// PrimitiveMaterial interface
-	virtual int				pass() const;							// render pass
-	virtual Color			diffuse() const;						// Material properties
-	virtual Color			ambient() const;
-	virtual Color			emissive() const;
-	virtual Color			specular() const;
-	virtual float			specularPower() const;
+	// PrimitiveMaterial interface - accessors
+	virtual int					pass() const;
+	virtual Color				diffuse() const;
+	virtual Color				ambient() const;
+	virtual Color				emissive() const;
+	virtual Color				specular() const;
+	virtual float				specularPower() const;
+	virtual Blending			blending() const;
+	virtual bool				doubleSided() const;
+	virtual bool				lightEnabled() const;
+	virtual FilterMode			filterMode() const;
+	virtual const char*			shader() const;
 
-	virtual Blending		blending() const;
+	// PrimitiveMaterial interface - mutators
+	virtual void				setPass( int nPass );
+	virtual void				setMaterial( Color diffuse, Color ambient, 
+									Color emissive, Color specular, float specularPower );
+	virtual void				setBlending( Blending blending );
+	virtual void				setDoubleSided( bool doubleSided );
+	virtual void				setLightEnable( bool enable );
+	virtual void				setFilterMode( FilterMode nMode );
+	virtual void				setShader( const char* pShader );
 
-	virtual bool			doubleSided() const;
-	virtual bool			lightEnabled() const;
-	virtual FilterMode		filterMode() const;
-	virtual const char *	shader() const;
+	virtual int					addSurface( PrimitiveSurface* pSurface, 
+									SurfaceType eType, int nIndex, int nUV, float* pParams );
+	virtual void				removeSurface( int n );
+	virtual void				clearSurfaces();
 
-	virtual void			setPass( int nPass );
-	virtual void			setMaterial( Color diffuse, Color ambient, 
-								Color emissive, Color specular, 
-								float specularPower );
-	virtual void			setBlending( Blending blending );
-	virtual void			setDoubleSided( bool doubleSided );
-	virtual void			setLightEnable( bool enable );
-	virtual void			setFilterMode( FilterMode nMode );
-	virtual void			setShader( const char * pShader );
+	virtual int					addChild( DevicePrimitive* pChild );
+	virtual void				removeChild( int n );
+	virtual void				clearChildren();
 
-	virtual int				addSurface( PrimitiveSurface * pSurface,
-								SurfaceType eType, int nIndex, int nUV, float * pParams );
-	virtual void			removeSurface( int n );
-	virtual void			clearSurfaces();				// remove all surfaces
+	virtual void				shadowPass();
 
-	virtual int				addChild( DevicePrimitive * pPrimitive );
-	virtual void			removeChild( int n );
-	virtual void			clearChildren();				// remove all child primitives
-
-	virtual void			shadowPass();
-
-	//! Mutators
+	// Mutators
 	void					setShader( Shader::Ref pShader );
 	void					clearShaders();
 
-	//! Types
+	// Types
 	struct Surface 
 	{
 		PrimitiveSurface::Ref		m_pSurface;
@@ -85,7 +87,7 @@ public:
 	bool					m_LightEnable;
 	FilterMode				m_nFilterMode;
 
-	bool					m_bUpdateShaders;
+	bool					m_bUpdateShaders;      // Tracks when shader needs reload
 	CharString				m_sShader;
 	Shader::Ref				m_pShader;
 
@@ -93,26 +95,56 @@ public:
 	Array< DevicePrimitive::Ref >
 							m_Children;
 	PrimitiveSetTransform::Ref	
-							m_TopTransform;
+							m_TopTransform;       // Transform optimization
 
 	bool					m_bPushed;
 
-	void					setupBlending();
-	void					clearTextureStages();
-	bool					setupTextureStatges();
-	bool					executeChildren();
+private:
+	// Render state management
+	bool				setupRenderStates(ID3D11DeviceContext* pContext, DisplayDeviceD3D* pDeviceD3D);
+	void				setupBlending(ID3D11DeviceContext* pContext, DisplayDeviceD3D* pDeviceD3D);
+
+	// Execution paths
+	bool				shouldUseSimplifiedRendering(const DisplayDeviceD3D::LightMap& lights, 
+													  DisplayDeviceD3D* pDeviceD3D) const;
+	bool				executeSimplifiedPath(DisplayDeviceD3D* pDeviceD3D, 
+											   const DisplayDeviceD3D::LightMap& lights);
+	bool				executeMultiLightPath(DisplayDeviceD3D* pDeviceD3D, 
+											   ID3D11DeviceContext* pContext,
+											   DisplayDeviceD3D::LightMap& lights);
+
+	// Shader management
+	Shader::Ref			selectShaderForSimplifiedPath(DisplayDeviceD3D* pDeviceD3D);
+	bool				updateShaderIfNeeded(DisplayDeviceD3D* pDeviceD3D);
+	void				setSimplifiedMaterialConstants(Shader::Ref shader, bool hasLights);
+	void				setMultiLightMaterialConstants(Shader::Ref shader, DisplayDeviceD3D* pDeviceD3D);
+
+	// Light rendering
+	bool				renderLightPasses(DisplayDeviceD3D* pDeviceD3D, 
+										   ID3D11DeviceContext* pContext,
+										   DisplayDeviceD3D::LightMap& lights);
+	bool				renderSingleLightPass(DisplayDeviceD3D* pDeviceD3D,
+											   ID3D11DeviceContext* pContext,
+											   DisplayDeviceD3D::Light& light,
+											   DisplayDeviceD3D::ShadowPassList::iterator& iShadowPass,
+											   int lightIndex);
+	void				setLightShaderConstants(const DisplayDeviceD3D::Light& light);
+	void				setupShadowMapForLight(DisplayDeviceD3D* pDeviceD3D,
+												ID3D11DeviceContext* pContext,
+												DisplayDeviceD3D::ShadowPassList::iterator& iShadowPass);
+
+	// Texture and primitive execution
+	bool				setupTextureStatges();
+	void				clearTextureStages();
+	bool				executeChildren();
 
 	// Helpers
-	static D3DCOLORVALUE	makeD3DCOLORVALUE( const Color &src );
-	static Color			makeColor( const D3DCOLORVALUE &src );
-	static int				sortSurfaces( Surface p1, Surface p2 );
+	static int			sortSurfaces( Surface p1, Surface p2 );
 };
 
-//----------------------------------------------------------------------------
-
-
+//---------------------------------------------------------------------------------------------------
 
 #endif
 
-//------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------
 // EOF

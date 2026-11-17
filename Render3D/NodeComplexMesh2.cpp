@@ -1,4 +1,4 @@
-/*
+﻿/*
 	NodeComplexMesh2.cpp
 
 	This is the high level polygon object
@@ -11,7 +11,7 @@
 //#define PROFILE_OFF
 
 //! if defined to non-zero, then allow the animation data to be used for LOD levels..
-#define ENABLE_LOD_ANIMATION			0
+#define ENABLE_LOD_ANIMATION			1
 
 #include "Debug/Trace.h"
 #include "Debug/Assert.h"
@@ -49,7 +49,7 @@ END_PROPERTY_LIST()
 NodeComplexMesh2::NodeComplexMesh2()
 {
 	m_Fps = 15.0f;
-	m_EnableLOD = false;
+	m_EnableLOD = true;
 	m_MinLOD = 1.0f;
 	m_MaxLOD = 750.0f;
 }
@@ -80,20 +80,21 @@ void NodeComplexMesh2::render( RenderContext &context, const Matrix33 & frame, c
 	int fc = frameCount();
 	int f = 0;
 
+	// Determine LOD level (0=full, 1=50%, 2=20%) and animation frame
+	int lod = 0;
 	if ( m_EnableLOD )
 	{
-		f = 0;								// highest level of detail - frame 0
+		f = 0;
 #if ENABLE_LOD_ANIMATION
 		if ( ! context.isShadowPass() )
 		{
-			// get the range from the view, scale the range by the object scale
 			float range = positionVS.z * (1.0f - context.detail());
-			if ( range > m_MinLOD )
-			{
-				f = (int)(((range - m_MinLOD) * fc) / (m_MaxLOD - m_MinLOD));
-				if ( f >= fc )
-					f = fc - 1;	// lowest level of detail
-			}
+			if ( range >= m_MaxLOD )
+				lod = LOD_LEVELS - 1;
+			else if ( range > m_MinLOD )
+				lod = 1 + (int)( ((range - m_MinLOD) / (m_MaxLOD - m_MinLOD)) * (LOD_LEVELS - 1) );
+			if ( lod < 0 ) lod = 0;
+			if ( lod >= LOD_LEVELS ) lod = LOD_LEVELS - 1;
 		}
 #endif
 	}
@@ -113,7 +114,14 @@ void NodeComplexMesh2::render( RenderContext &context, const Matrix33 & frame, c
 		if (! m_Materials[m].valid( true, false ) )
 			continue;
 
-		if ( m_Primitives[f].size() > m && m_Primitives[f][m].valid() )
+		// Use simplified LOD geometry when available
+		if ( lod > 0 && m_LodPrimitives[lod].size() > f &&
+		     m_LodPrimitives[lod][f].size() > m && m_LodPrimitives[lod][f][m].valid() )
+		{
+			context.push( m_Materials[m] );
+			context.push( m_LodPrimitives[lod][f][m] );
+		}
+		else if ( m_Primitives[f].size() > m && m_Primitives[f][m].valid() )
 		{
 			// push the material and triangles
 			context.push( m_Materials[m] );
@@ -543,6 +551,11 @@ void NodeComplexMesh2::optimize()
 void NodeComplexMesh2::invalidate()
 {
 	m_Primitives.release();
+	for ( int i = 1; i < LOD_LEVELS; ++i )
+	{
+		m_LodTriangles[i].release();
+		m_LodPrimitives[i].release();
+	}
 }
 
 void NodeComplexMesh2::scale( float scale )
@@ -761,6 +774,139 @@ void NodeComplexMesh2::createPrimitives( DisplayDevice * pDisplay )
 		}
 	}
 
+	// Build automatic LOD levels if enabled
+	if ( m_EnableLOD )
+	{
+		buildLodLevel( pDisplay, 1, 0.50f );
+		buildLodLevel( pDisplay, 2, 0.20f );
+	}
+}
+
+//----------------------------------------------------------------------------
+
+void NodeComplexMesh2::buildLodLevel( DisplayDevice * pDisplay, int lod, float targetRatio )
+{
+	const int nVerts = m_Verts.size();
+	if ( nVerts < 3 )
+		return;
+
+	const int nFrames = m_Triangles.size();
+	m_LodTriangles[lod].allocate( nFrames );
+
+	for ( int f = 0; f < nFrames; ++f )
+	{
+		const int nMats = m_Triangles[f].size();
+		m_LodTriangles[lod][f].allocate( nMats );
+
+		for ( int m = 0; m < nMats; ++m )
+		{
+			const TriangleList & src = m_Triangles[f][m];
+			TriangleList       & dst = m_LodTriangles[lod][f][m];
+
+			const int nTris = src.size();
+			if ( nTris < 4 )
+			{
+				dst = src;
+				continue;
+			}
+
+			const int targetTris = (int)( nTris * targetRatio );
+			if ( targetTris >= nTris )
+			{
+				dst = src;
+				continue;
+			}
+
+			Array<Triangle> work( src );
+
+			// Iterative shortest-edge collapse
+			while ( work.size() > targetTris )
+			{
+				float bestLen  = 1e30f;
+				int   bestTri  = -1;
+				int   bestEdge = -1;
+
+				for ( int t = 0; t < work.size(); ++t )
+				{
+					const Triangle & tri = work[t];
+					for ( int e = 0; e < 3; ++e )
+					{
+						int va = tri.verts[e];
+						int vb = tri.verts[(e+1)%3];
+						float len = (m_Verts[va].position - m_Verts[vb].position).magnitude();
+						if ( len < bestLen )
+						{
+							bestLen  = len;
+							bestTri  = t;
+							bestEdge = e;
+						}
+					}
+				}
+
+				if ( bestTri < 0 )
+					break;
+
+				int vKeep   = work[bestTri].verts[ bestEdge ];
+				int vRemove = work[bestTri].verts[ (bestEdge+1)%3 ];
+
+				for ( int t = 0; t < work.size(); ++t )
+					for ( int v = 0; v < 3; ++v )
+						if ( work[t].verts[v] == vRemove )
+							work[t].verts[v] = vKeep;
+
+				for ( int t = work.size() - 1; t >= 0; --t )
+				{
+					const Triangle & tri = work[t];
+					if ( tri.verts[0] == tri.verts[1] ||
+					     tri.verts[1] == tri.verts[2] ||
+					     tri.verts[0] == tri.verts[2] )
+					{
+						work.remove( t );
+					}
+				}
+			}
+
+			dst = work;
+		}
+	}
+
+	// Upload simplified triangles as GPU primitives
+	if ( m_LodPrimitives[lod].size() > 0 )
+		return;
+
+	PrimitiveTriangleListI * pFirst = NULL;
+
+	m_LodPrimitives[lod].allocate( m_LodTriangles[lod].size() );
+	for ( int f = 0; f < m_LodTriangles[lod].size(); ++f )
+	{
+		m_LodPrimitives[lod][f].allocate( m_LodTriangles[lod][f].size() );
+		for ( int i = 0; i < m_LodTriangles[lod][f].size(); ++i )
+		{
+			if ( m_LodTriangles[lod][f][i].size() > 0 )
+			{
+				if ( pFirst == NULL )
+				{
+					word * pTris = (word *)m_LodTriangles[lod][f][i].buffer();
+					Vertex * pV  = m_Verts.buffer();
+
+					pFirst = m_LodPrimitives[lod][f][i] = PrimitiveTriangleListI::create(
+						pDisplay, m_LodTriangles[lod][f][i].size(), pTris, m_Verts.size(), pV );
+
+					delete pTris;
+					delete pV;
+				}
+				else
+				{
+					word * pTris = (word *)m_LodTriangles[lod][f][i].buffer();
+
+					m_LodPrimitives[lod][f][i] = PrimitiveTriangleListI::create(
+						pDisplay, m_LodTriangles[lod][f][i].size(), pTris, pFirst );
+
+					delete pTris;
+				}
+			}
+		}
+	}
 }
 
 //----------------------------------------------------------------------------

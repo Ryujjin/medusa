@@ -14,6 +14,7 @@
 #include "Render3D/NodeFlare.h"
 #include "Display/PrimitiveSetTransform.h"
 #include "Network/LogClient.h"		// LogLevels
+#include "Standard/Time.h"
 #include "Verb.h"
 #include "Constants.h"
 #include "WorldTimer.h"
@@ -212,10 +213,24 @@ bool WorldContext::start()
 	if ( m_Timer.active() )
 		return false;		// timer is already running!
 
-	// load faciton ships
-	initializeNounTemplates();
+	dword nStartTotal = Time::milliseconds();
+
+	// load faction ship templates - server only; on the client this would block
+	// the message-receive thread (main thread) waiting for every NounTemplate +
+	// Scene to load from disk, preventing PING responses and causing a server disconnect.
+	// Clients load templates lazily on first access (ship-selection UI / pre-cache).
+	if ( user()->isServer() )
+	{
+		dword nTemplMs = Time::milliseconds();
+		initializeNounTemplates();
+		LOG_STATUS( "WorldContext", CharString().format("start: initializeNounTemplates %u ms", Time::milliseconds() - nTemplMs) );
+	}
 	// initialize the zones
-	initializeZones();
+	{
+		dword nZoneMs = Time::milliseconds();
+		initializeZones();
+		LOG_STATUS( "WorldContext", CharString().format("start: initializeZones %u ms (%d zones)", Time::milliseconds() - nZoneMs, zoneCount()) );
+	}
 	// set the timers current tick
 	m_Timer.setTick( m_Tick );
 	// start the timer
@@ -239,6 +254,7 @@ bool WorldContext::start()
 		}
 	}
 
+	LOG_STATUS( "WorldContext", CharString().format("start: total %u ms, %d zones, isServer=%d", Time::milliseconds() - nStartTotal, zoneCount(), (int)user()->isServer()) );
 	return true;
 }
 
@@ -447,7 +463,15 @@ void WorldContext::render( RenderContext & context, const Matrix33 & frame, cons
 
 	// no zones in this context, so nothing to render
 	if ( zoneCount() < 1 )
-		return;	
+	{
+		static bool s_bTracedOnce = false;
+		if ( !s_bTracedOnce )
+		{
+			TRACE("WorldContext::render() - EARLY RETURN: zoneCount=0, nothing to render");
+			s_bTracedOnce = true;
+		}
+		return;
+	}
 
 	if (! bProxy )
 	{
@@ -487,14 +511,18 @@ void WorldContext::render( RenderContext & context, const Matrix33 & frame, cons
 			if ( pScenery != NULL )
 			{
 				// disable the fog
-				pDisplay->disableFog();
-				pScenery->render( context, Matrix33::IDENTITY, context.position() ); 
+					pDisplay->disableFog();
+			//		pScenery->render( context, Matrix33::IDENTITY, context.position() ); // Original Star Bubble
+					
+					
 			}
 		}
 
 		PROFILE_END();
 
 		context.setMaxShadowLights( WorldContext::sm_bEnableShadows ? WorldContext::sm_nMaxShadowLights : 0 );
+		TRACE(CharString().format("WorldContext::render() - calling beginScene(), activeZone=%s",
+			activeZone() ? activeZone()->name() : "NULL"));
 		if ( context.beginScene() )
 		{
 			PROFILE_START( "Rendering Zones" );
@@ -528,9 +556,12 @@ void WorldContext::render( RenderContext & context, const Matrix33 & frame, cons
 
 void WorldContext::renderZones( RenderContext & context, const Matrix33 & frame, const Vector3 & translate )
 {
+	TRACE(CharString().format("WorldContext::renderZones() - zoneCount=%d", m_ZoneArray.size()));
 	for(int i=0;i<m_ZoneArray.size();i++)
 	{
 		NodeZone * pZone = m_ZoneArray[i];
+		TRACE(CharString().format("WorldContext::renderZones() - zone[%d] '%s' childCount=%d",
+			i, pZone ? pZone->name() : "NULL", pZone ? pZone->childCount() : -1));
 		if ( pZone->childCount() > 0 )
 			pZone->preRender( context, frame, translate );
 	}
@@ -1102,8 +1133,9 @@ bool WorldContext::addTeam( Team & team )
 
 	// add the team
 	m_Teams.insert( team.nTeamId, team );
-	// make sure all templates are loaded
-	if ( team.pTemplates.valid() )
+	// only eagerly pre-load templates on the server; on the client this blocks the
+	// main/receive thread waiting for Collection + NounTemplate + Scene disk I/O.
+	if ( user()->isServer() && team.pTemplates.valid() )
 	{
 		Collection::Link pCollection = team.pTemplates;
 		pCollection->load();		// load all resources
@@ -1409,17 +1441,27 @@ WorldContext::User * WorldContext::nullUser()
 
 void WorldContext::initializeZones()
 {
+	dword nTotal = Time::milliseconds();
 	for(int i=0;i<m_ZoneArray.size();i++)
+	{
+		dword nZone = Time::milliseconds();
 		m_ZoneArray[i]->initializeZone( this );
+		dword nMs = Time::milliseconds() - nZone;
+		if ( nMs > 50 )
+			LOG_STATUS( "WorldContext", CharString().format("initializeZone[%d] '%s': %u ms, %d children", i, m_ZoneArray[i]->name(), nMs, m_ZoneArray[i]->childCount()) );
+	}
+	LOG_STATUS( "WorldContext", CharString().format("initializeZones total: %u ms for %d zones", Time::milliseconds() - nTotal, m_ZoneArray.size()) );
 }
 
 void WorldContext::initializeNounTemplates()
 {
+	dword nTotal = Time::milliseconds();
 	for(int i=0;i<m_Teams.size();i++)
 	{
 		Team & team = m_Teams[ i ];
 		if ( team.pTemplates.valid() )
 		{
+			dword nTeamMs = Time::milliseconds();
 			Collection * pCollection = team.pTemplates;
 			pCollection->load();
 
@@ -1429,9 +1471,10 @@ void WorldContext::initializeNounTemplates()
 				if ( pContext.valid() )
 					pContext->noun();		// force Scene containing the noun to get loaded
 			}
+			LOG_STATUS( "WorldContext", CharString().format("initializeNounTemplates team[%d]: %u ms, %d templates", i, Time::milliseconds() - nTeamMs, pCollection->resourceCount()) );
 		}
 	}
+	LOG_STATUS( "WorldContext", CharString().format("initializeNounTemplates total: %u ms", Time::milliseconds() - nTotal) );
 }
-
 //----------------------------------------------------------------------------
 // EOF

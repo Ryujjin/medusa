@@ -15,7 +15,7 @@
 
 //----------------------------------------------------------------------------
 
-const int		MAX_PINGS = 1;											// PING_CLIENT_RATE * MAX_PINGS = Total time before dead-client is disconnected
+const int		MAX_PINGS = 3;											// PING_CLIENT_RATE * MAX_PINGS = Total time before dead-client is disconnected
 const dword		UDP_DOWN_TIME = 15;										// if no UDP packets received within this time period, UDP is considered down..
 
 //----------------------------------------------------------------------------

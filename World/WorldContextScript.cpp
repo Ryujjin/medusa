@@ -29,10 +29,18 @@
 	#include "../../Medusa/ThirdParty/LuaJIT/jit/opt.h"
 	#include "../../Medusa/ThirdParty/LuaJIT/jit/opt_inline.h"
 
-	#ifdef _DEBUG
-		#pragma comment( lib, "../../Medusa/ThirdParty/LuaJIT/bin/Lua51D.lib")
+	#if defined(_M_X64)
+		#ifdef _DEBUG
+			#pragma comment( lib, "../../Medusa/ThirdParty/LuaJIT/bin/x64/lua51D.lib")
+		#else
+			#pragma comment( lib, "../../Medusa/ThirdParty/LuaJIT/bin/x64/lua51.lib")
+		#endif
 	#else
-		#pragma comment( lib, "../../Medusa/ThirdParty/LuaJIT/bin/Lua51.lib")
+		#ifdef _DEBUG
+			#pragma comment( lib, "../../Medusa/ThirdParty/LuaJIT/bin/lua51D.lib")
+		#else
+			#pragma comment( lib, "../../Medusa/ThirdParty/LuaJIT/bin/lua51.lib")
+		#endif
 	#endif
 #endif
 

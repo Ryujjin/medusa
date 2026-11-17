@@ -1,4 +1,4 @@
-/**
+﻿/**
 	@file DevicePrimitive.cpp
 
 	(c)2009 Palestar Inc
@@ -17,6 +17,12 @@
 #include "PrimitiveLineList.h"
 #include "PrimitiveLineStrip.h"
 #include "PrimitiveWindow.h"
+#include "PrimitiveGalaxy.h"
+#include "PrimitiveGalaxySpriteSet.h"
+#include "PrimitiveStarSurface.h"
+#include "PrimitiveStarBillboard.h"
+#include "PrimitiveTriangleListTess.h"
+#include "PrimitiveVideo.h"
 
 //---------------------------------------------------------------------------------------------------
 
@@ -57,6 +63,12 @@ IMPLEMENT_DEVICE_PRIMITIVE( PrimitiveLineStripDL );
 IMPLEMENT_DEVICE_PRIMITIVE( PrimitiveLineStripTL );
 IMPLEMENT_DEVICE_PRIMITIVE( PrimitiveLineStripDTL );
 IMPLEMENT_DEVICE_PRIMITIVE( PrimitiveWindow );
+IMPLEMENT_DEVICE_PRIMITIVE( PrimitiveGalaxy );
+IMPLEMENT_DEVICE_PRIMITIVE( PrimitiveGalaxySpriteSet );
+IMPLEMENT_DEVICE_PRIMITIVE( PrimitiveStarSurface );
+IMPLEMENT_DEVICE_PRIMITIVE( PrimitiveStarBillboard );
+IMPLEMENT_DEVICE_PRIMITIVE( PrimitiveTriangleListTess );
+IMPLEMENT_DEVICE_PRIMITIVE( PrimitiveVideo );
 
 //----------------------------------------------------------------------------
 

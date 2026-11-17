@@ -1,4 +1,4 @@
-/*
+﻿/*
 	NodeParticleSystem.cpp
 	(c)2005 Palestar
 */
@@ -212,7 +212,7 @@ void NodeParticleSystem::render( RenderContext & context,
 
 	// push the primitives
 	context.push( m_Material );
-	context.pushIdentity(); 
+	context.pushWorldTransform( Matrix33::IDENTITY, Vector3::ZERO );
 	context.push( pTriangleList );
 
 	// call the base class
@@ -221,7 +221,8 @@ void NodeParticleSystem::render( RenderContext & context,
 
 //-------------------------------------------------------------------------------
 
-NodeParticleSystem::ParticleInstanceData * NodeParticleSystem::updateParticles( RenderContext & context,
+NodeParticleSystem::ParticleInstanceData * NodeParticleSystem::updateParticles(
+								RenderContext & context,
 								const Matrix33 & frame,
                                 const Vector3 & position  )
 {

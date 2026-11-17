@@ -41,7 +41,7 @@ struct DriverInfo
 	}
 };
 
-static BOOL CALLBACK FormatEnum(HACMDRIVERID hadid, LPACMFORMATDETAILS pafd, DWORD dwInstance, DWORD fdwSupport)
+static BOOL CALLBACK FormatEnum(HACMDRIVERID hadid, LPACMFORMATDETAILS pafd, DWORD_PTR dwInstance, DWORD fdwSupport)
 {
 	DriverInfo & driver = *((DriverInfo *)dwInstance);
 
@@ -55,7 +55,7 @@ static BOOL CALLBACK FormatEnum(HACMDRIVERID hadid, LPACMFORMATDETAILS pafd, DWO
 	return TRUE; // continue enumerating
 }
 
-static BOOL CALLBACK DriverEnum(HACMDRIVERID hadid, DWORD dwInstance, DWORD fdwSupport)
+static BOOL CALLBACK DriverEnum(HACMDRIVERID hadid, DWORD_PTR dwInstance, DWORD fdwSupport)
 {
 	Array< DriverInfo > & drivers = *((Array< DriverInfo > *)dwInstance);
 
@@ -100,7 +100,7 @@ static BOOL CALLBACK DriverEnum(HACMDRIVERID hadid, DWORD dwInstance, DWORD fdwS
 	fd.cbwfx = dwSize;
 	fd.dwFormatTag = WAVE_FORMAT_UNKNOWN;
 
-	acmFormatEnum(had, &fd, FormatEnum, (DWORD)&newDriver, 0);
+	acmFormatEnum(had, &fd, FormatEnum, (DWORD_PTR)&newDriver, 0);
 
 	// release and close
 	free(pwf);
@@ -111,7 +111,7 @@ static BOOL CALLBACK DriverEnum(HACMDRIVERID hadid, DWORD dwInstance, DWORD fdwS
 
 static void EnumDrivers( Array< DriverInfo > & drivers )
 {
-	acmDriverEnum( DriverEnum, (DWORD)&drivers, 0);
+	acmDriverEnum( DriverEnum, (DWORD_PTR)&drivers, 0);
 }
 
 //----------------------------------------------------------------------------

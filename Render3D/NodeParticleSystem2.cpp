@@ -187,7 +187,7 @@ void NodeParticleSystem2::render( RenderContext &context,
 
 	// push the primitives
 	context.push( m_Material );
-	context.pushIdentity();
+	context.pushWorldTransform( Matrix33::IDENTITY, Vector3::ZERO );
 	context.push( pTriangleList );
 
 	// call the base class

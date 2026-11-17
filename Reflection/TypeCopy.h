@@ -20,7 +20,8 @@
 
 #include <map>	
 #ifdef WIN32
-#include <typeinfo.h>
+//#include <typeinfo.h>
+#include <typeinfo>
 #else
 #include <typeinfo>
 #endif

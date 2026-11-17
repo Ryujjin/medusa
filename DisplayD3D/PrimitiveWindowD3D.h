@@ -16,6 +16,8 @@
 class PrimitiveWindowD3D : public PrimitiveWindow
 {
 public:
+	DECLARE_DEVICE_PRIMITIVE();
+
 	// Construction
 	PrimitiveWindowD3D();
 

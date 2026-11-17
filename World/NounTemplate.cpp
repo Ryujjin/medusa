@@ -34,8 +34,8 @@ bool NounTemplate::read( const InStream & input )
 {
 	if (! Resource::read( input ) )
 		return false;
-	// force the Resource to be loaded
-	m_pScene.load();
+	// schedule background load — never block the main thread loading the scene
+	m_pScene.load( false );
 	return true;
 }
 
@@ -43,7 +43,7 @@ bool NounTemplate::read( const InStream & input )
 
 Noun * NounTemplate::noun() 
 {
-	if ( m_pScene.valid() && m_pScene->node() && m_pScene->node()->childCount() > 0 )
+	if ( m_pScene.valid( false, false ) && m_pScene->node() && m_pScene->node()->childCount() > 0 )
 		return WidgetCast<Noun>( m_pScene->node()->child( 0 ) );
 
 	return NULL;

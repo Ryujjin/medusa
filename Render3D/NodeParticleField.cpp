@@ -44,6 +44,8 @@ void NodeParticleField::render( RenderContext &context,
 		const Matrix33 & frame, 
 		const Vector3 & position )
 {
+	return; // TEMP: disabled to isolate NodeRealStarField
+
 	if ( m_Material.valid() )
 	{
 		DisplayDevice * pDisplay = context.display();

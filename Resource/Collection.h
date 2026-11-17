@@ -36,7 +36,7 @@ public:
 	void				replace( int n, Resource::Link pResource );		// replace entry
 	void				remove( int resource );						// remove from array
 
-	void				load();										// load all resources
+	void				load( bool bBlocking = true );				// load all resources
 	void				unload();									// unload all resources
 	void				release();									// release entire array
 

@@ -10,9 +10,11 @@
 #define DISPLAYEFFECTHDR_H
 
 #include "Display/DisplayEffect.h"
-#include "Shader.h"
+#include "ShaderD3D11.h"// Shawn added for d3d10
+//#include "Shader.h"
 
-#include <d3dx9.h>
+#include <d3d11.h>
+#include <directxmath.h>
 
 //---------------------------------------------------------------------------------------------------
 
@@ -43,11 +45,24 @@ protected:
 
 	SizeInt						m_RenderSize;
 	SizeInt						m_BloomSize;
-	IDirect3DTexture9 *			m_pBloomRenderTarget;			// the texture our scene is actually rendered into..
-	IDirect3DTexture9 *			m_pBloomTextures[ 2 ];			// bloom is rendered back and forth between these two buffers to produce final image
-	IDirect3DSurface9 *			m_pBloomSurfaces[ 2 ];
-	IDirect3DSurface9 *			m_pRenderTarget;				// this is our final render target
-	IDirect3DStateBlock9 *		m_pStateBlock;					// state block for restoring the rendering
+
+	// D3D11 resources
+	ID3D11Texture2D *			m_pBloomRenderTarget;			// the texture our scene is actually rendered into..
+	ID3D11RenderTargetView *	m_pBloomRenderTargetView;		// RTV for the bloom render target
+	ID3D11ShaderResourceView *	m_pBloomRenderTargetSRV;		// SRV for reading from bloom render target
+
+	ID3D11Texture2D *			m_pBloomTextures[ 2 ];			// bloom is rendered back and forth between these two buffers to produce final image
+	ID3D11RenderTargetView *	m_pBloomRenderTargetViews[ 2 ];	// RTVs for bloom textures
+	ID3D11ShaderResourceView *	m_pBloomShaderResourceViews[ 2 ];// SRVs for reading from bloom textures
+
+	ID3D11RenderTargetView *	m_pOriginalRenderTarget;		// this is our final render target
+	ID3D11DepthStencilView *	m_pOriginalDepthStencil;		// original depth stencil
+
+	ID3D11SamplerState *		m_pSamplerState;				// sampler state for texture filtering
+	ID3D11DepthStencilState *	m_pDepthStencilState;			// depth stencil state with Z disabled
+	ID3D11RasterizerState *		m_pRasterizerState;				// rasterizer state
+	ID3D11BlendState *			m_pBlendState;					// blend state
+	ID3D11Buffer *					m_pBloomScaleCB;				// 16-byte dynamic CB for fScale at PS b1
 
 	Shader::Ref					m_pBrightPass;
 	Shader::Ref					m_pHorzBlur;

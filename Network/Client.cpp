@@ -8,8 +8,12 @@
 #include "Debug/Trace.h"
 #include "Debug/Assert.h"
 #include "Debug/Profile.h"
+#include "Standard/Time.h"
 
 #include "Client.h"
+
+//! Maximum milliseconds spent processing incoming messages per update() call.
+static const dword CLIENT_MSG_BUDGET_MS = 33;
 
 //----------------------------------------------------------------------------
 
@@ -111,6 +115,7 @@ bool Client::update()
 
 		// create the input stream
 		InStream input( m_pFileSocket, FF_TRANSMIT, SV_CURRENT, m_pDictionary );
+		dword nBudgetStart = Time::milliseconds();
 		while( m_pSocket->receivedBytes() > 0 )
 		{
 			try {
@@ -119,9 +124,13 @@ bool Client::update()
 			}
 			catch( FileSocket::FileError )
 			{
-				LOG_DEBUG_HIGH( "Client", "Socket error on message 0x%.2x", nMessageID );
-				break;
+				LOG_DEBUG_HIGH( "Client", "Socket error on message 0x%.2x, closing connection.", nMessageID );
+				close();
+				return false;
 			}
+			// yield after spending CLIENT_MSG_BUDGET_MS to keep the frame responsive
+			if ( (Time::milliseconds() - nBudgetStart) >= CLIENT_MSG_BUDGET_MS )
+				break;
 		}
 	}
 

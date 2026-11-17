@@ -6,6 +6,7 @@
 #define AUDIO_DLL
 #include "Audio/AudioCodec.h"
 #include "Factory/FactoryTypes.h"
+#include "Factory/Factory.h"
 
 //----------------------------------------------------------------------------
 

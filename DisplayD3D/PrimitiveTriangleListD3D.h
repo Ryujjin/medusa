@@ -28,8 +28,7 @@ public:
 private:
 	// Data
 	int				m_VBSize;
-	LPDIRECT3DVERTEXBUFFER9
-					m_VB;
+	ID3D11Buffer*	m_VB;
 };
 
 //----------------------------------------------------------------------------
@@ -82,15 +81,12 @@ private:
 	int				m_Triangles;
 	int				m_Verts;
 
-	LPDIRECT3DVERTEXBUFFER9
-					m_VB;
-	LPDIRECT3DVERTEXBUFFER9
-					m_SystemVB;
-	LPDIRECT3DINDEXBUFFER9
-					m_VBI;
+	ID3D11Buffer*	m_VB;
+	ID3D11Buffer*	m_SystemVB;
+	ID3D11Buffer*	m_VBI;
 
 	// static
-	bool			createOptimizedVB( LPDIRECT3DDEVICE9 d3dd, int triangleCount, const word * pTriangles );
+	bool			createOptimizedVB( ID3D11Device* d3dDevice, int triangleCount, const word * pTriangles );
 };
 
 //------------------------------------------------------------------------------------
@@ -112,8 +108,7 @@ public:
 private:
 	// Data
 	int				m_VBSize;
-	LPDIRECT3DVERTEXBUFFER9
-					m_VB;
+	ID3D11Buffer*	m_VB;
 };
 
 //----------------------------------------------------------------------------
@@ -160,8 +155,7 @@ public:
 private:
 	// Data
 	int				m_VBSize;
-	LPDIRECT3DVERTEXBUFFER9
-					m_VB;
+	ID3D11Buffer*	m_VB;
 };
 
 //----------------------------------------------------------------------------

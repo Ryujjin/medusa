@@ -656,7 +656,7 @@ bool Socket::receiveData()
 		else if ( nReceived > 0 )
 		{
 			m_DecodeBuffer.push( sRecvBuffer, nReceived );
-			nBytesRecevied += nBytesRecevied;
+			nBytesRecevied += nReceived;
 		}
 	}
 

@@ -84,11 +84,15 @@ bool Font::read( const InStream & input )
 		return false;
 	}
 
-	if ( DisplayDevice::sm_pCacheDevice != NULL )
-	{
-		createFontMaterial( DisplayDevice::sm_pCacheDevice );
-		createFontSurface( DisplayDevice::sm_pCacheDevice );
-	}
+	// NOTE: Do NOT create font surfaces here.  Font::read() may be called from
+	// Broker::loadingThread (a background thread), and createFontSurface() locks
+	// PrimitiveSurface objects which use the D3D11 immediate context (Map/Unmap).
+	// The immediate context is not thread-safe; concurrent access from the render
+	// thread causes a driver-level deadlock.
+	// Font::push() already lazily creates both the material and surfaces on the
+	// render thread:
+	//   if (! m_FontMaterial.valid())   createFontMaterial( pDisplay );
+	//   if ( m_FontSurface.size() < 1 ) createFontSurface( pDisplay );
 
 	return true;
 }
@@ -238,9 +242,9 @@ void Font::push( DisplayDevice * pDisplay, Vector3 & pos, const wchar * pText, C
 	if ( m_FontSurface.size() < 1 )
 		createFontSurface( pDisplay );
 
-	// bias the position
-	pos.x = ceil( pos.x ) - 0.5f;
-	pos.y = ceil( pos.y ) - 0.5f;
+	// snap to pixel boundary (DX11 pixel centers are at half-integers, no bias needed)
+	pos.x = ceil( pos.x );
+	pos.y = ceil( pos.y );
 
 	// push material
 	PrimitiveMaterial::push( pDisplay, m_FontMaterial );
@@ -275,11 +279,11 @@ void Font::push( DisplayDevice * pDisplay, Vector3 & pos, const wchar * pText, C
 			break;		// invalid surface
 
 		// set the current surface for the font
-		if ( nLastSurface != nSurface )
-		{
-			DevicePrimitive::push( pDisplay, m_FontSurface[ nSurface ] );
-			nLastSurface = nSurface;
-		}
+        if ( nLastSurface != nSurface )
+        {
+            DevicePrimitive::push( pDisplay, m_FontSurface[ nSurface ] );
+            nLastSurface = nSurface;
+        }
 
 		int count = pEnd - pText;
 		PrimitiveTriangleListDTL::Ref triangleList = 
@@ -370,10 +374,6 @@ void Font::push( DisplayDevice * pDisplay, Vector3 & pos, const wchar * pText, C
 		pDisplay->push( triangleList );
 
 	}
-
-	// unbias the position
-	pos.x += 0.5f;
-	pos.y += 0.5f;
 }
 
 //----------------------------------------------------------------------------
@@ -406,11 +406,13 @@ void Font::push( DisplayDevice * pDisplay, Font * pFont, PointInt & pos, const c
 
 void Font::createFontMaterial( DisplayDevice * pDisplay )
 {
-	m_FontMaterial = PrimitiveMaterial::create( pDisplay, WHITE, WHITE, WHITE, WHITE, 0.0f, 
-		sm_bEnableAlpha ? PrimitiveMaterial::ALPHA : PrimitiveMaterial::ADDITIVE );
-	m_FontMaterial->setPass( DisplayDevice::SECONDARY );
-	m_FontMaterial->setFilterMode( PrimitiveMaterial::FILTER_OFF );
-	m_FontMaterial->setLightEnable( false );
+// Create font material with lighting disabled and white diffuse/emissive
+m_FontMaterial = PrimitiveMaterial::create( pDisplay, WHITE, WHITE, WHITE, WHITE, 0.0f, 
+    sm_bEnableAlpha ? PrimitiveMaterial::ALPHA : PrimitiveMaterial::ADDITIVE );
+m_FontMaterial->setPass( DisplayDevice::SECONDARY );
+m_FontMaterial->setFilterMode( PrimitiveMaterial::FILTER_OFF );
+m_FontMaterial->setLightEnable( false );
+    m_FontMaterial->setShader("UI_D3D11.fx");
 }
 
 bool Font::createFontSurface( DisplayDevice * pDisplay )
@@ -486,12 +488,12 @@ bool Font::createFontSurface( DisplayDevice * pDisplay )
 
 		// create the draw object for the surface
 		Draw::Ref drawer = Draw::create( m_FontSurface[k] );
-		
+
 		// calculate the texel size per pixel of this surface
 		double du = 1.0 / size.width;
 		double dv = 1.0 / size.height;
 
-		Color fontColor( 255, 255, 255, 255 );
+		Color fontColor( WHITE );	// white atlas + vertex color tint in UI shader
 
 		// draw the font into the surface
 		int chs = 0;
@@ -509,7 +511,7 @@ bool Font::createFontSurface( DisplayDevice * pDisplay )
 
 				// draw the character into the texture
 				drawer->draw( position, this, ch + m_Offset, fontColor );
-				
+
 				// next character
 				ch++;
 				chs++;

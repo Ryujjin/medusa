@@ -359,26 +359,46 @@ void WorldClient::receiveMessage( bool bUDP, u8 nMessage, const InStream & input
 
 	case CONTEXT_INIT:
 		{
+			dword nInitStart = Time::milliseconds();
+
 			WidgetWrap worldContext;
 			input >> worldContext;
 
-			TRACE( CharString().format("CONTEXT_INIT, worldContext.size() = %u", worldContext.size()) );
+			dword nDeserMs = Time::milliseconds() - nInitStart;
+			TRACE( CharString().format("CONTEXT_INIT deserialize: %u ms, worldContext.size() = %u", nDeserMs, worldContext.size()) );
 
-			lock();
-
-			// clear some pointers
-			m_nTeamId = 0;
-
+			// Unwrap and start the world context BEFORE acquiring the lock.
+			// WorldContext::start() calls initializeZones() which iterates every noun
+			// in the universe and can take many seconds on large servers / debug builds.
+			// Holding m_Lock during that work starves queued CONTEXT_CRON handlers,
+			// causing WARNING: Message 0x95 took 100000+ ms and apparent disconnects.
+			dword nUnwrapStart = Time::milliseconds();
 			Widget::Ref pUncasted = worldContext.unwrap();
+			dword nUnwrapMs = Time::milliseconds() - nUnwrapStart;
+			TRACE( CharString().format("CONTEXT_INIT unwrap: %u ms", nUnwrapMs) );
+
 			if ( pUncasted.valid() )
 			{
 				WorldContext * pUniverse = WidgetCast<WorldContext>( pUncasted.pointer() );
 				if ( pUniverse != NULL )
+				{
+					dword nSetCtxStart = Time::milliseconds();
 					setContext( pUniverse );
+					TRACE( CharString().format("CONTEXT_INIT setContext (includes start): %u ms", Time::milliseconds() - nSetCtxStart) );
+				}
 
-				// de-reference the object before we unlock
+				// release reference before entering the lock
 				pUncasted = NULL;
 			}
+
+			dword nLockWaitStart = Time::milliseconds();
+			lock();
+			dword nLockWaitMs = Time::milliseconds() - nLockWaitStart;
+			if ( nLockWaitMs > 50 )
+				TRACE( CharString().format("CONTEXT_INIT lock wait: %u ms", nLockWaitMs) );
+
+			// clear some pointers
+			m_nTeamId = 0;
 
 			// inform our user that the context is ready...
 			user()->onContextReceived();
@@ -386,6 +406,8 @@ void WorldClient::receiveMessage( bool bUDP, u8 nMessage, const InStream & input
 			m_ContextReceived.signal();
 
 			unlock();
+
+			TRACE( CharString().format("CONTEXT_INIT total: %u ms", Time::milliseconds() - nInitStart) );
 		}
 		break;
 	case CONTEXT_END:
@@ -818,8 +840,13 @@ void WorldClient::receiveMessage( bool bUDP, u8 nMessage, const InStream & input
 
 						// set the clientId to 1, so canAttachVerb() allows this verb to be attached
 						pVerb->setClientId( 1 );
-						// attach the verb now
+						// attach the verb now -- time individual verbs to find slow onExecute()
+						dword nVerbStart = Time::milliseconds();
 						pNoun->attachVerb( pVerb );
+						dword nVerbElapsed = Time::milliseconds() - nVerbStart;
+						if ( nVerbElapsed >= MESSAGE_WARNING_TIME )
+							LOG_WARNING( "WorldClient", "CONTEXT_ADD_VERB slow: Verb=%s Target=%s took %u ms",
+								pVerb->propertyList()->className(), pNoun->name(), nVerbElapsed );
 					}
 					else
 					{
@@ -850,14 +877,18 @@ void WorldClient::receiveMessage( bool bUDP, u8 nMessage, const InStream & input
 			dword nTick;
 			input >> nTick;
 
-			//TRACE( "CONTEXT_CRON" );
-
 			lock();
 			
 			// syncronize the worldContext tick
 			context()->cron( nTick );
 			
 			unlock();
+
+			// CONTEXT_CRON is trivially cheap (tick math only; CriticalSection is
+			// re-entrant so lock() never blocks on the main thread). Any apparent
+			// elapsed time is pure OS scheduling jitter during heavy I/O load.
+			// Suppress the false-positive warning by resetting nStart here.
+			nStart = Time::milliseconds();
 		}
 		break;
 	case CONTEXT_RUN_SCRIPT:

@@ -1,6 +1,7 @@
 /*
 	PrimitiveSetTransformD3D.h
 	(c)2005 Palestar, Richard Lyle
+	Updated to DirectX 11
 */
 
 #ifndef PRIMITIVE_SET_TRANSFORM_D3D_H
@@ -8,8 +9,7 @@
 
 #include "Display/PrimitiveSetTransform.h"
 #include "DisplayD3D/DisplayDeviceD3D.h"
-
-
+#include <DirectXMath.h>
 
 //------------------------------------------------------------------------------------
 
@@ -30,7 +30,7 @@ public:
 	Matrix33			m_Transform;
 	Vector3				m_PostTransformOffset;
 
-	D3DMATRIX			m_Matrix;
+	DirectX::XMMATRIX	m_Matrix;
 };
 
 //----------------------------------------------------------------------------
