@@ -20,6 +20,10 @@
 #include <windows.h>
 #include <Excpt.h>
 #include <dbghelp.h>
+
+#if defined(_M_X64)
+extern "C" WINBASEAPI WORD WINAPI RtlCaptureStackBackTrace( DWORD FramesToSkip, DWORD FramesToCapture, PVOID * BackTrace, PDWORD BackTraceHash );
+#endif
 #endif
 
 //---------------------------------------------------------------------------------------------------
@@ -71,11 +75,19 @@ int GetStack( void * pContext, dword * pStack, int nMax )
 #if defined(_WIN32) || defined(_XBOX)
 	int nCount = 0;
 
-	dword * pFrame = (dword *)((CONTEXT *)pContext)->Ebp;
-	dword * pPrevFrame = NULL;
+#if defined(_M_X64)
+	ULONG_PTR * pFrame = (ULONG_PTR *)((CONTEXT *)pContext)->Rbp;
+#else
+	ULONG_PTR * pFrame = (ULONG_PTR *)((CONTEXT *)pContext)->Ebp;
+#endif
+	ULONG_PTR * pPrevFrame = NULL;
 
 	try {
-		DWORD pc = ((CONTEXT *)pContext)->Eip;
+#if defined(_M_X64)
+		ULONG_PTR pc = (ULONG_PTR)((CONTEXT *)pContext)->Rip;
+#else
+		ULONG_PTR pc = (ULONG_PTR)((CONTEXT *)pContext)->Eip;
+#endif
 
 		while( nCount < nMax )
 		{
@@ -83,14 +95,14 @@ int GetStack( void * pContext, dword * pStack, int nMax )
 				break;
 			if ( IsBadReadPtr(pFrame, sizeof(PVOID)*2) )
 				break;
-			if ( ((dword)pFrame & 3) != 0 )	
+			if ( ((ULONG_PTR)pFrame & 3) != 0 )	
 				break;
 
-			pStack[ nCount++ ] = pc;
+			pStack[ nCount++ ] = (dword)pc;
 
 			pc = pFrame[1];
 			pPrevFrame = pFrame;
-			pFrame = (dword *)pFrame[0]; // proceed to next higher frame on stack
+			pFrame = (ULONG_PTR *)pFrame[0]; // proceed to next higher frame on stack
 
 			if ( pc == 0 )
 				break;
@@ -111,7 +123,7 @@ int GetStack( void * pContext, dword * pStack, int nMax )
 
 int GetStack( dword * pStack, int nMax )
 {
-#if defined(_WIN32) || defined(_XBOX)
+#if (defined(_WIN32) || defined(_XBOX)) && !defined(_M_X64)
    int nCount = 0;
    // due to release build optimizations, we don't want to miss any critical functions, so we don't skip
    // any entries in the stack.
@@ -125,31 +137,31 @@ int GetStack( dword * pStack, int nMax )
    dword * pPrevFrame = 0;
 
    __asm {
-      mov [pFrame],ebp
+	  mov [pFrame],ebp
    };
 
    try {
-      while( nCount < nMax )
-      {
-         if ( pFrame <= pPrevFrame )
-            break;
-         if ( IsBadReadPtr(pFrame, sizeof(PVOID)*2) )
-            break;
-         if ( ((dword)pFrame & 3) != 0 )	
-            break;
+	  while( nCount < nMax )
+	  {
+		 if ( pFrame <= pPrevFrame )
+			break;
+		 if ( IsBadReadPtr(pFrame, sizeof(PVOID)*2) )
+			break;
+		 if ( ((dword)pFrame & 3) != 0 )	
+			break;
 
-         dword pc = pFrame[1];         // get the return address from the frame
-         pPrevFrame = pFrame;          // save off th previous frame
-         pFrame = (dword *)pFrame[0];  // proceed to next higher frame on stack
+		 dword pc = pFrame[1];         // get the return address from the frame
+		 pPrevFrame = pFrame;          // save off th previous frame
+		 pFrame = (dword *)pFrame[0];  // proceed to next higher frame on stack
 
-         if ( nSkip <= 0 )
-            pStack[ nCount++ ] = pc;
-         else
-            --nSkip;
+		 if ( nSkip <= 0 )
+			pStack[ nCount++ ] = pc;
+		 else
+			--nSkip;
 
-         if ( pc == 0 )
-            break;
-      }
+		 if ( pc == 0 )
+			break;
+	  }
    }
    catch( ... )
    {}
@@ -158,6 +170,19 @@ int GetStack( dword * pStack, int nMax )
 	   pStack[ nCount ] = 0;		
 
    return nCount;
+#elif defined(_M_X64)
+   // x86 EBP-chain walking is not valid on x64 (no dedicated frame pointer, 32-bit dword
+   // is too small to hold a 64-bit address). Use RtlCaptureStackBackTrace for x64 instead.
+   if ( nMax <= 0 )
+	  return 0;
+
+   void * pAddrs[ 64 ];
+   int nFrames = (int)RtlCaptureStackBackTrace( 0, (DWORD)min( nMax, 64 ), pAddrs, NULL );
+   for ( int i = 0; i < nFrames; ++i )
+	  pStack[ i ] = (dword)(ULONG_PTR)pAddrs[ i ];
+   if ( nFrames < nMax )
+	  pStack[ nFrames ] = 0;
+   return nFrames;
 #else
 	return 0;
 #endif
@@ -337,21 +362,30 @@ static void dumpExceptionReport( void * pException )
     DWORD section, offset;
 
 	if ( GetLogicalAddress( pExceptionRecord->ExceptionAddress, szFaultingModule, sizeof( szFaultingModule ), section, offset ) )
-		sprintf_s( sLine, sizeof(sLine), "Fault address:  %08X %02X:%08X %s", unsigned(pExceptionRecord->ExceptionAddress),section, offset, szFaultingModule );
+		sprintf_s( sLine, sizeof(sLine), "Fault address:  %p %02X:%08X %s", pExceptionRecord->ExceptionAddress,section, offset, szFaultingModule );
 	else
-		sprintf_s( sLine, sizeof(sLine), "Fault address:  %08X ??:???????? %s", unsigned(pExceptionRecord->ExceptionAddress), szFaultingModule );
+		sprintf_s( sLine, sizeof(sLine), "Fault address:  %p ??:???????? %s", pExceptionRecord->ExceptionAddress, szFaultingModule );
 	LOG_ERROR( "EXCEPTION",  sLine );
 
 	// Show the registers
-    PCONTEXT pCtx = pExceptionInfo->ContextRecord;
-    LOG_ERROR( "EXCEPTION",  "Registers:" );
-    sprintf_s( sLine, sizeof(sLine), "EAX:%08X EBX:%08X ECX:%08X EDX:%08X ESI:%08X EDI:%08X",pCtx->Eax, pCtx->Ebx, pCtx->Ecx, pCtx->Edx, pCtx->Esi, pCtx->Edi );
+	PCONTEXT pCtx = pExceptionInfo->ContextRecord;
+	LOG_ERROR( "EXCEPTION",  "Registers:" );
+#if defined(_M_X64)
+	sprintf_s( sLine, sizeof(sLine), "RAX:%016llX RBX:%016llX RCX:%016llX RDX:%016llX RSI:%016llX RDI:%016llX",pCtx->Rax, pCtx->Rbx, pCtx->Rcx, pCtx->Rdx, pCtx->Rsi, pCtx->Rdi );
 	LOG_ERROR( "EXCEPTION",  sLine );
-    sprintf_s( sLine, sizeof(sLine), "CS:EIP:%04X:%08X", pCtx->SegCs, pCtx->Eip );
+	sprintf_s( sLine, sizeof(sLine), "CS:RIP:%04X:%016llX", pCtx->SegCs, pCtx->Rip );
 	LOG_ERROR( "EXCEPTION",  sLine );
-    sprintf_s( sLine, sizeof(sLine), "SS:ESP:%04X:%08X  EBP:%08X",pCtx->SegSs, pCtx->Esp, pCtx->Ebp );
+	sprintf_s( sLine, sizeof(sLine), "SS:RSP:%04X:%016llX  RBP:%016llX",pCtx->SegSs, pCtx->Rsp, pCtx->Rbp );
 	LOG_ERROR( "EXCEPTION",  sLine );
-    sprintf_s( sLine, sizeof(sLine), "DS:%04X  ES:%04X  FS:%04X  GS:%04X",pCtx->SegDs, pCtx->SegEs, pCtx->SegFs, pCtx->SegGs );
+#else
+	sprintf_s( sLine, sizeof(sLine), "EAX:%08X EBX:%08X ECX:%08X EDX:%08X ESI:%08X EDI:%08X",pCtx->Eax, pCtx->Ebx, pCtx->Ecx, pCtx->Edx, pCtx->Esi, pCtx->Edi );
+	LOG_ERROR( "EXCEPTION",  sLine );
+	sprintf_s( sLine, sizeof(sLine), "CS:EIP:%04X:%08X", pCtx->SegCs, pCtx->Eip );
+	LOG_ERROR( "EXCEPTION",  sLine );
+	sprintf_s( sLine, sizeof(sLine), "SS:ESP:%04X:%08X  EBP:%08X",pCtx->SegSs, pCtx->Esp, pCtx->Ebp );
+	LOG_ERROR( "EXCEPTION",  sLine );
+#endif
+	sprintf_s( sLine, sizeof(sLine), "DS:%04X  ES:%04X  FS:%04X  GS:%04X",pCtx->SegDs, pCtx->SegEs, pCtx->SegFs, pCtx->SegGs );
 	LOG_ERROR( "EXCEPTION",  sLine );
     sprintf_s( sLine, sizeof(sLine), "Flags:%08X", pCtx->EFlags );
 	LOG_ERROR( "EXCEPTION",  sLine );
