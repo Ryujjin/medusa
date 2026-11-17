@@ -93,7 +93,7 @@ BOOL ClientUpdate::OnInitDialog()
 	              // EXCEPTION: OCX Property Pages should return FALSE
 }
 
-void ClientUpdate::OnTimer(UINT nIDEvent) 
+void ClientUpdate::OnTimer(UINT_PTR nIDEvent) 
 {
 	CDialog::OnTimer(nIDEvent);
 
