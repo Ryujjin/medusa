@@ -101,6 +101,8 @@
     <ClCompile Include="Stripper.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="NodeRealStarField.cpp" />
+    <ClCompile Include="NodeProceduralPlanet.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BaseNode.h">
@@ -202,6 +204,9 @@
     <ClInclude Include="Stripper.h">
       <Filter>Headers</Filter>
     </ClInclude>
+    <ClInclude Include="StarCatalog.h" />
+    <ClInclude Include="NodeRealStarField.h" />
+    <ClInclude Include="NodeProceduralPlanet.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="makefile" />

@@ -12,9 +12,6 @@
     <Filter Include="ThirdParty">
       <UniqueIdentifier>{17101c74-0741-44cc-9fc3-e713e9f591f7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="ThirdParty\DX9">
-      <UniqueIdentifier>{223de7fc-0b7b-4925-9b6e-3bce62e60f9b}</UniqueIdentifier>
-    </Filter>
     <Filter Include="ThirdParty\squish">
       <UniqueIdentifier>{b5d08c35-4260-42f8-8ac7-b4ddee757911}</UniqueIdentifier>
     </Filter>
@@ -62,9 +59,6 @@
     <ClCompile Include="PrimitiveWindowD3D.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="Shader.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
     <ClCompile Include="..\ThirdParty\squish-1.10\alpha.cpp">
       <Filter>ThirdParty\squish</Filter>
     </ClCompile>
@@ -92,6 +86,16 @@
     <ClCompile Include="..\ThirdParty\squish-1.10\squish.cpp">
       <Filter>ThirdParty\squish</Filter>
     </ClCompile>
+    <ClCompile Include="D3d10shader.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="PrimitiveGalaxyD3D.cpp" />
+    <ClCompile Include="PrimitiveGalaxySpriteSetD3D.cpp" />
+    <ClCompile Include="PrimitiveStarSurfaceD3D.cpp" />
+    <ClCompile Include="PrimitiveTriangleListTessD3D.cpp" />
+    <ClCompile Include="PrimitiveStarBillboardD3D.cpp" />
+    <ClCompile Include="..\..\darkspace\medusa\DisplayD3D\PrimitiveVideoD3D.cpp" />
+    <ClCompile Include="ProceduralPlanetD3D.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DisplayDeviceD3D.h">
@@ -136,9 +140,6 @@
     <ClInclude Include="PrimitiveWindowD3D.h">
       <Filter>Headers</Filter>
     </ClInclude>
-    <ClInclude Include="Shader.h">
-      <Filter>Headers</Filter>
-    </ClInclude>
     <ClInclude Include="..\ThirdParty\squish-1.10\alpha.h">
       <Filter>ThirdParty\squish</Filter>
     </ClInclude>
@@ -181,21 +182,31 @@
     <ClInclude Include="..\ThirdParty\squish-1.10\squish.h">
       <Filter>ThirdParty\squish</Filter>
     </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <Library Include="..\ThirdParty\Dx9\Lib\d3d9.lib">
-      <Filter>ThirdParty\DX9</Filter>
-    </Library>
-    <Library Include="..\ThirdParty\Dx9\Lib\d3dx9.lib">
-      <Filter>ThirdParty\DX9</Filter>
-    </Library>
-    <Library Include="..\ThirdParty\Dx9\Lib\dxguid.lib">
-      <Filter>ThirdParty\DX9</Filter>
-    </Library>
+    <ClInclude Include="ShaderD3D11.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Display\Color.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Header.h" />
+    <ClInclude Include="D3D11Ptr.h" />
+    <ClInclude Include="PrimitiveGalaxyD3D.h" />
+    <ClInclude Include="PrimitiveGalaxySpriteSetD3D.h" />
+    <ClInclude Include="PrimitiveStarSurfaceD3D.h" />
+    <ClInclude Include="PrimitiveTriangleListTessD3D.h" />
+    <ClInclude Include="PrimitiveStarBillboardD3D.h" />
+    <ClInclude Include="..\..\darkspace\medusa\DisplayD3D\PrimitiveVideoD3D.h" />
+    <ClInclude Include="ProceduralPlanetD3D.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\ThirdParty\squish-1.10\singlecolourlookup.inl">
       <Filter>ThirdParty\squish</Filter>
     </None>
+    <None Include="RAII_IMPROVEMENTS.md" />
+    <None Include="BUILD_STATUS_AND_NEXT_STEPS.md" />
+    <None Include="D3D11_PORT_COMPLETE.md" />
+    <None Include="CODE_QUALITY_IMPROVEMENTS.md" />
+    <None Include="MATERIAL_HIERARCHY_FIX.md" />
+    <None Include="SESSION_MEMORY_LOG.md" />
   </ItemGroup>
 </Project>
