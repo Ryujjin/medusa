@@ -24,116 +24,35 @@
 #include <map>
 #include <vector>
 
-#define FBXSDK_NEW_API
-
-#include "fbxsdk.h"
-
-using namespace fbxsdk_2013_2;
-
-const std::string LOCAL_MARKER("#");
+#include "assimp/Importer.hpp"
+#include "assimp/scene.h"
+#include "assimp/postprocess.h"
 
 //---------------------------------------------------------------------------------------------------
 
 ImportFBX FBX_IMPORTER;
 
-static bool LoadScene(FbxManager* pSdkManager, FbxScene * pScene, const char* pFilename)
+// convert an Assimp matrix into a Matrix33 for orientation and a Vector3 for transform
+static void AssimpToMedusa( const aiMatrix4x4 & m, Matrix33 & f, Vector3 & t )
 {
-    // Create an importer.
-    FbxImporter * pImporter = FbxImporter::Create(pSdkManager,"");
-
-    // Initialize the importer by providing a filename.
-    bool bImportStatus = pImporter->Initialize( pFilename, -1, pSdkManager->GetIOSettings() );
-    if( !bImportStatus )
-        return false;
- 
-    // Import the scene.
-    bool bStatus = pImporter->Import( pScene );
-
-    // Destroy the importer.
-    pImporter->Destroy();
-
-    return bStatus;
+    f.i.x = m.a1;  f.i.y = m.b1;  f.i.z = m.c1;
+    f.j.x = m.a2;  f.j.y = m.b2;  f.j.z = m.c2;
+    f.k.x = m.a3;  f.k.y = m.b3;  f.k.z = m.c3;
+    t.x = m.a4;    t.y = m.b4;    t.z = m.c4;
 }
 
-static void DumpObjects( FbxObject & object )
+static Color ConvertColor( const aiColor3D & c )
 {
-	FbxClassId classId = object.GetClassId();
-	const char * pClassName = classId.GetName();
-	LOG_STATUS( "DumpObjects", pClassName );
-
-	int nObjects = object.GetSrcObjectCount();
-	for(int j=0;j<nObjects;++j)
-	{
-		FbxObject * pObject = object.GetSrcObject( j );
-		if ( pObject )
-			DumpObjects( *pObject );
-	}
+    return Color( (u8)(255 * Clamp<float>( c.r, 0.0f, 1.0f )), 
+        (u8)(255 * Clamp<float>( c.g, 0.0f, 1.0f )), 
+        (u8)(255 * Clamp<float>( c.b, 0.0f, 1.0f )) );
 }
 
-static CharString GetTextureName( FbxProperty & property )
-{
-	if( property.IsValid() )
-	{
-		int nLayeredTextures = property.GetSrcObjectCount( FbxLayeredTexture::ClassId );
-		for(int i=0;i<nLayeredTextures;++i)
-		{
-			FbxLayeredTexture *pLayeredTexture = (FbxLayeredTexture*)property.GetSrcObject(FbxLayeredTexture::ClassId, i);
-			if ( pLayeredTexture )
-			{
-				int nLayeredTextures = pLayeredTexture->GetSrcObjectCount(FbxFileTexture::ClassId);
-				for(int k =0; k<nLayeredTextures; ++k)
-				{
-					FbxFileTexture* pTexture = FbxCast <FbxFileTexture> (pLayeredTexture->GetSrcObject(FbxFileTexture::ClassId,k));
-					if ( pTexture )
-						return pTexture->GetFileName();
-				}
-			}
-		}
 
-		int nTextures = property.GetSrcObjectCount(FbxFileTexture::ClassId);
-		for(int k=0;k<nTextures;++k)
-		{
-			FbxFileTexture* pTexture = FbxCast <FbxFileTexture> (property.GetSrcObject(FbxFileTexture::ClassId,k));
-			if ( pTexture )
-				return pTexture->GetFileName();
-		}
-	}
-
-	return "";
-}
-
-static Vector3 ConvertVector( const FbxVector4 & v )
-{
-	return Vector3( -v[0], -v[1], -v[2] );
-}
-
-static Color ConvertColor( const FbxColor & c )
-{
-	return Color( (u8)(255 * Clamp<double>( c[0], 0.0, 1.0)), 
-		(u8)(255 * Clamp<double>( c[1], 0.0, 1.0)), 
-		(u8)(255 * Clamp<double>( c[2], 0.0, 1.0)) );
-}
-
-// convert a FBX matrix into a Matrix33 for orientation and a Vector3 for transform
-static void FBXToMedusa( FbxAMatrix &fbx, Matrix33 & f, Vector3 & t )
-{
-    double *matrix = fbx;
-    f.i.x = (float)matrix[0];  f.i.y = (float)matrix[1];  f.i.z = (float)matrix[2];
-    f.j.x = (float)matrix[4];  f.j.y = (float)matrix[5];  f.j.z = (float)matrix[6];
-    f.k.x = (float)matrix[8];  f.k.y = (float)matrix[9];  f.k.z = (float)matrix[10];
-    t.x = (float)matrix[12]; t.y = (float)matrix[13]; t.z = (float)matrix[14];
-}
-
-static bool CompareVerts( const NodeComplexMesh2::Vertex & lhs, const NodeComplexMesh2::Vertex & rhs )
-{
-	return( (lhs.position - rhs.position).magnitude() < EPSILON &&
-		fabs( lhs.u - rhs.u) < EPSILON &&
-		fabs( lhs.v - rhs.v) < EPSILON );
-}
 
 //---------------------------------------------------------------------------------------------------
 
-ImportFBX::ImportFBX() : m_pSDKManager( NULL ), m_pScene( NULL )
+ImportFBX::ImportFBX() : m_pScene( NULL )
 {}
 
 ImportFBX::~ImportFBX()
@@ -163,34 +82,17 @@ bool ImportFBX::import( ScenePort * a_pScene, const char * a_pFileName )
 	//CharString sTexturesPath( importPath + "Textures\\" );
 	//CreateDirectory( sTexturesPath, NULL );
 
-	m_pSDKManager = FbxManager::Create();
-	if (! m_pSDKManager )
-		return false;
-
-	// Create an IOSettings object.
-	FbxIOSettings * ios = FbxIOSettings::Create(m_pSDKManager, IOSROOT );
-	m_pSDKManager->SetIOSettings(ios);
-
-	m_pScene = FbxScene::Create(m_pSDKManager,"");
-	if (! m_pScene )
-		return false;
-
-	bool bImported = false;
-	if ( (bImported = LoadScene(m_pSDKManager, m_pScene, a_pFileName)) )
+	Assimp::Importer importer;
+	const aiScene * pScene = importer.ReadFile( a_pFileName, 
+		aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_GenSmoothNormals );
+	if ( pScene == NULL || pScene->mRootNode == NULL )
 	{
-		DumpObjects( *m_pScene );
-
-		// convert coordinate system...
-		FbxAxisSystem fbxSceneAxisSystem = m_pScene->GetGlobalSettings().GetAxisSystem();
-		FbxAxisSystem fbxOurAxisSystem( FbxAxisSystem::eDirectX ); //FbxAxisSystem::eYAxis, FbxAxisSystem::eParityEven, FbxAxisSystem::eLeftHanded );
-		if(fbxSceneAxisSystem != fbxOurAxisSystem)
-			fbxOurAxisSystem.ConvertScene( m_pScene );
-
-		bImported = importNodes( a_pScene, a_pScene->m_Root, m_pScene->GetRootNode() );
+		a_pScene->report( CharString().format( "Failed to load (%s): %s", a_pFileName, importer.GetErrorString() ) );
+		return false;
 	}
 
-	m_pSDKManager->Destroy();
-	m_pSDKManager = NULL;
+	m_pScene = pScene;
+	bool bImported = importNodes( a_pScene, a_pScene->m_Root, pScene->mRootNode );
 	m_pScene = NULL;
 
 	return bImported;
@@ -200,39 +102,28 @@ bool ImportFBX::import( ScenePort * a_pScene, const char * a_pFileName )
 
 bool ImportFBX::importNodes( ScenePort * a_pScene, 
 						BaseNodePort * a_pParent, 
-						FbxNode * a_pNode )
+						const aiNode * a_pNode )
 {
 	if (! a_pNode || !a_pParent )
 		return false;
 
 	NodePort * pNode = NULL;
-
-	FbxNodeAttribute::EType eType = FbxNodeAttribute::eUnknown;
-	FbxNodeAttribute * pAttribute = a_pNode->GetNodeAttribute();
-	if ( pAttribute )
-		eType = pAttribute->GetAttributeType();
-
-    switch ( eType )
-    {
-    case FbxNodeAttribute::eMesh:      
+	if ( a_pNode->mNumMeshes > 0 )
 		pNode = importMesh( a_pScene, a_pParent, a_pNode );
-		break;
-	default:
+	else
 		pNode = importNode( a_pScene, a_pParent, a_pNode );
-        break;
-    }   
 
 	if ( pNode )
 	{
 		// keep the names the same
-		pNode->setName( a_pNode->GetName() );
+		pNode->setName( a_pNode->mName.C_Str() );
 		// attach imported node 
 		a_pParent->m_Children.push( pNode );
 
 		// recurse into any child nodes..
-		for( int i=0;i<a_pNode->GetChildCount();++i )
+		for( unsigned int i=0;i<a_pNode->mNumChildren;++i )
 		{
-			if (! importNodes( a_pScene, pNode, a_pNode->GetChild(i) ) )
+			if (! importNodes( a_pScene, pNode, a_pNode->mChildren[i] ) )
 				return false;
 		}
 	}
@@ -244,179 +135,158 @@ bool ImportFBX::importNodes( ScenePort * a_pScene,
 
 NodePort * ImportFBX::importNode( ScenePort * a_pScene,
 						BaseNodePort * a_pParent,
-						FbxNode * a_pNode )
+						const aiNode * a_pNode )
 {
 	NodePort * pOut = new NodePort();
-
-	FbxTime t( 0 );
-	FBXToMedusa( a_pNode->EvaluateLocalTransform( t ), pOut->m_Frame, pOut->m_Position );
+	AssimpToMedusa( a_pNode->mTransformation, pOut->m_Frame, pOut->m_Position );
 
 	return pOut;
 }
 								
 NodePort * ImportFBX::importMesh( ScenePort * a_pScene,
 						BaseNodePort * a_pParent,
-						FbxNode * a_pNode )
+						const aiNode * a_pNode )
 {
-	// convert the node to triangles...
-	FbxGeometryConverter converter( m_pSDKManager);
-	switch( a_pNode->GetNodeAttribute()->GetAttributeType() )
+	const char * pNodeName = a_pNode->mName.C_Str();
+
+	// collect the triangle meshes of this node, each distinct material gets a slot
+	std::vector<const aiMesh *> meshes;
+	unsigned int nTotalVerts = 0;
+	for( unsigned int i=0;i<a_pNode->mNumMeshes;++i )
 	{
-        case FbxNodeAttribute::eMesh:
-			if (! converter.TriangulateInPlace( a_pNode ) )
-				return NULL;
-			break;
+		const aiMesh * pMesh = m_pScene->mMeshes[ a_pNode->mMeshes[i] ];
+		if ( (pMesh->mPrimitiveTypes & aiPrimitiveType_TRIANGLE) == 0 )
+			continue;
+		meshes.push_back( pMesh );
+		nTotalVerts += pMesh->mNumVertices;
 	}
 
-    FbxMesh * pMesh = a_pNode->GetMesh();
-	if (! pMesh )
-		return NULL;
-
-    FbxLayerElementArrayTemplate<int> * pMaterialIndcies = 0;
-    pMesh->GetMaterialIndices(&pMaterialIndcies);
-    const int nMaterialIndices = pMaterialIndcies ? pMaterialIndcies->GetCount() : 0;
-    
-    FbxLayerElementArrayTemplate<FbxVector2> *pDiffuseUVs = 0;    
-    pMesh->GetTextureUV(&pDiffuseUVs, FbxLayerElement::eTextureDiffuse); 
-    
-	FbxLayerElementUV::EMappingMode eDiffuseMappingMode = FbxLayerElementUV::eNone;
-
-	const FbxLayer * pLayer = pMesh->GetLayer(0);
-	if(pLayer)
+	// triangle indices are 16 bit words, all verts of the node must be addressable
+	if ( nTotalVerts > 65536 )
 	{
-		const FbxLayerElementUV * pDiffuseLayer = pLayer->GetUVs(FbxLayerElement::eTextureDiffuse);
-		if(pDiffuseLayer)
-			eDiffuseMappingMode = pDiffuseLayer->GetMappingMode();
+		a_pScene->report( CharString().format( "Node (%s) has %u vertices, exceeds 65536 limit", pNodeName, nTotalVerts ) );
+		return NULL;
 	}
 
 	NodeComplexMeshPort * pOut = new NodeComplexMeshPort();
 
-	// add all the materials first..
-	for(int m=0;m<a_pNode->GetMaterialCount();++m)
-		pOut->m_Materials.push( importMaterial( a_pScene, a_pNode, m ) );
+	std::map<unsigned int, int> materialSlots;
+	for( size_t i=0;i<meshes.size();++i )
+	{
+		unsigned int nMaterialIndex = meshes[i]->mMaterialIndex;
+		if ( materialSlots.find( nMaterialIndex ) == materialSlots.end() )
+		{
+			materialSlots[ nMaterialIndex ] = (int)pOut->m_Materials.size();
+			pOut->m_Materials.push( importMaterial( a_pScene, m_pScene->mMaterials[ nMaterialIndex ], pNodeName ) );
+		}
+	}
 
 	// we must have at least one material, create a default one if needed..
 	if ( pOut->m_Materials.size() == 0 )
-		pOut->m_Materials.push( importMaterial( a_pScene, a_pNode, 0 ) );
+		pOut->m_Materials.push( importMaterial( a_pScene, NULL, pNodeName ) );
 
 	pOut->m_Triangles.allocate( 1 );
 	pOut->m_Triangles[0].allocate( pOut->m_Materials.size() );
 
-	FbxVector4 * pVerts = pMesh->GetControlPoints();
-
-	int nFrame = 0;
-    int nPolygonCount = pMesh->GetPolygonCount();
-    for (int p = 0; p < nPolygonCount; ++p) 
+	for( size_t i=0;i<meshes.size();++i )
 	{
-		int nPolygonSize = pMesh->GetPolygonSize( p );
-		ASSERT( nPolygonSize == 3 );		// everything should be in triangles
+		const aiMesh * pMesh = meshes[i];
+		int nMaterial = materialSlots[ pMesh->mMaterialIndex ];
+		word nBaseVertex = (word)pOut->m_Verts.size();
 
-		int nMaterial = pMaterialIndcies->GetAt( p < nMaterialIndices ? p : 0 );
-		NodeComplexMesh2::Triangle & triangle = pOut->m_Triangles[nFrame][nMaterial].push();
-
-		// create triangles from the polygons..
-        for (int j = 0; j < nPolygonSize; ++j) 
+		for( unsigned int v=0;v<pMesh->mNumVertices;++v )
 		{
-			const int nVertexIndex = pMesh->GetPolygonVertex( p, j );
+			const aiVector3D & position = pMesh->mVertices[v];
 
 			Vertex vertex;
-			vertex.position = ConvertVector( pVerts[ nVertexIndex ] );
-			FbxVector4 normal;
-			pMesh->GetPolygonVertexNormal(p, j, normal);
-			vertex.normal = ConvertVector( normal );
-		
+			vertex.position = Vector3( position.x, position.y, position.z );
+			if ( pMesh->mNormals )
+			{
+				const aiVector3D & normal = pMesh->mNormals[v];
+				vertex.normal = Vector3( normal.x, normal.y, normal.z );
+			}
+			else
+				vertex.normal = Vector3( 0.0f, 0.0f, 0.0f );
+
 			vertex.u = vertex.v = 0.0f;
-
-			if(pDiffuseUVs)
+			if ( pMesh->HasTextureCoords( 0 ) )
 			{
-				FbxVector2 fbxDiffuseUV(0,0);
-				if(eDiffuseMappingMode == FbxLayerElementUV::eByPolygonVertex)
-					fbxDiffuseUV = pDiffuseUVs->GetAt(pMesh->GetTextureUVIndex(p, j));
-				else
-					fbxDiffuseUV = pDiffuseUVs->GetAt( nVertexIndex );
-				vertex.u = (float)fbxDiffuseUV[0];
-				vertex.v = 1.0f - fmod( (float)fbxDiffuseUV[1], 1.0f );
+				const aiVector3D & uv = pMesh->mTextureCoords[0][v];
+				vertex.u = uv.x;
+				vertex.v = 1.0f - fmod( uv.y, 1.0f );
 			}
 
-			// search for a vertex that we already have..
-			int nVertexFound = -1;
-			for(int k=0;nVertexFound < 0 && k<pOut->m_Verts.size();++k)
-				if ( CompareVerts( pOut->m_Verts[k], vertex ) )
-					nVertexFound = k;
+			pOut->m_Verts.push( vertex );
+		}
 
-			if ( nVertexFound < 0 )
-			{
-				// no vertex found, add new vertex for mesh..
-				nVertexFound = pOut->m_Verts.size();
-				pOut->m_Verts.push( vertex );
-			}
+		for( unsigned int f=0;f<pMesh->mNumFaces;++f )
+		{
+			const aiFace & face = pMesh->mFaces[f];
+			if ( face.mNumIndices != 3 )
+				continue;		// only triangles are supported
 
-			triangle.verts[j] = nVertexFound;
-        }
-    }
+			NodeComplexMesh2::Triangle & triangle = pOut->m_Triangles[0][nMaterial].push();
+			for( unsigned int j=0;j<3;++j )
+				triangle.verts[j] = (word)(nBaseVertex + face.mIndices[j]);
+		}
+	}
 
 	// default to optimize the mesh...
 	pOut->m_Optimize = true;
 	pOut->m_CalcNormals = true;
-	pOut->m_Reverse = true;				// quick fix just to get FBX importing working..
+	pOut->m_Reverse = true;
 
 	// get the frame & position, then transform our verts..
-	FbxTime t( 0 );
-	FBXToMedusa( a_pNode->EvaluateLocalTransform( t ), pOut->m_Frame, pOut->m_Position );
+	AssimpToMedusa( a_pNode->mTransformation, pOut->m_Frame, pOut->m_Position );
 	pOut->transformVerts();
 
 	return pOut;
 }
 
-CharString ImportFBX::importMaterial( ScenePort * a_pScene, FbxNode * a_pNode, int m /*= 0*/ )
+CharString ImportFBX::importMaterial( ScenePort * a_pScene, const aiMaterial * a_pMaterial, const char * a_pDefaultName )
 {
-	if (! a_pNode )
-		return "";
-
 	CharString sImportPath( CResourcerDoc::document()->currentDirectory() );
-	const char * pMaterialName = a_pNode->GetName();
+	CharString sMaterialName( a_pDefaultName );
 
-	FbxSurfaceMaterial * pMaterial = FbxCast<FbxSurfaceMaterial>( a_pNode->GetSrcObject(FbxSurfaceMaterial::ClassId, m) );
-	if ( pMaterial )
-		pMaterialName = pMaterial->GetName();
+	aiString name;
+	if ( a_pMaterial != NULL && a_pMaterial->Get( AI_MATKEY_NAME, name ) == AI_SUCCESS && name.length > 0 )
+		sMaterialName = name.C_Str();
 
-	CharString sMaterialPort( sImportPath + "m_" + pMaterialName + ".prt" );
+	CharString sMaterialPort( sImportPath + "m_" + sMaterialName + ".prt" );
 	if (! FileDisk::fileExists( sMaterialPort ) )
 	{
 		// create material 
 		MaterialPort::Ref pMaterialPort = new MaterialPort();
 
-		if ( pMaterial != NULL )
+		if ( a_pMaterial != NULL )
 		{
-			FbxSurfaceLambert * pLambert = FbxCast<FbxSurfaceLambert>( pMaterial );
-			if ( pLambert != NULL )
-			{
-				pMaterialPort->m_Ambient = ConvertColor( pLambert->Ambient.Get() );
-				pMaterialPort->m_Diffuse = ConvertColor( pLambert->Diffuse.Get() );
-				pMaterialPort->m_Emissive = ConvertColor( pLambert->Emissive.Get() );
-			}
+			aiColor3D color;
+			if ( a_pMaterial->Get( AI_MATKEY_COLOR_AMBIENT, color ) == AI_SUCCESS )
+				pMaterialPort->m_Ambient = ConvertColor( color );
+			if ( a_pMaterial->Get( AI_MATKEY_COLOR_DIFFUSE, color ) == AI_SUCCESS )
+				pMaterialPort->m_Diffuse = ConvertColor( color );
+			if ( a_pMaterial->Get( AI_MATKEY_COLOR_EMISSIVE, color ) == AI_SUCCESS )
+				pMaterialPort->m_Emissive = ConvertColor( color );
 
-			DumpObjects( *pMaterial );
-
-			FbxProperty diffuse = pMaterial->FindProperty( FbxSurfaceMaterial::sDiffuse );
-			if ( diffuse.IsValid() )
+			aiString texture;
+			if ( a_pMaterial->GetTexture( aiTextureType_DIFFUSE, 0, &texture ) == AI_SUCCESS )
 			{
 				pMaterialPort->m_Textures.push( MaterialPort::Texture( PrimitiveSurface::DIFFUSE, 
-					importImage( a_pScene, GetTextureName( diffuse ) ), true ) );
+					importImage( a_pScene, texture.C_Str() ), true ) );
 			}
 
-			FbxProperty emissive = pMaterial->FindProperty( FbxSurfaceMaterial::sEmissive );
-			if ( emissive.IsValid() )
+			if ( a_pMaterial->GetTexture( aiTextureType_EMISSIVE, 0, &texture ) == AI_SUCCESS )
 			{
 				pMaterialPort->m_Textures.push( MaterialPort::Texture( PrimitiveSurface::LIGHTMAP, 
-					importImage( a_pScene, GetTextureName( emissive ) ), true ) );
+					importImage( a_pScene, texture.C_Str() ), true ) );
 			}
 
-			FbxProperty bump = pMaterial->FindProperty( FbxSurfaceMaterial::sBump );
-			if ( bump.IsValid() )
+			// normal maps are stored as NORMALS, older formats store bump maps as HEIGHT
+			if ( a_pMaterial->GetTexture( aiTextureType_NORMALS, 0, &texture ) == AI_SUCCESS
+				|| a_pMaterial->GetTexture( aiTextureType_HEIGHT, 0, &texture ) == AI_SUCCESS )
 			{
 				pMaterialPort->m_Textures.push( MaterialPort::Texture( PrimitiveSurface::BUMPMAP, 
-					importImage( a_pScene, GetTextureName( bump ) ), true ) );
+					importImage( a_pScene, texture.C_Str() ), true ) );
 			}
 		}
 

@@ -14,12 +14,9 @@
 #include <map>
 #include <string>
 
-namespace fbxsdk_2013_2 {
-	// forward declare
-	class FbxManager;
-	class FbxScene;
-	class FbxNode;
-};
+struct aiScene;
+struct aiNode;
+struct aiMaterial;
 
 //---------------------------------------------------------------------------------------------------
 
@@ -38,24 +35,21 @@ protected:
 	CharString			m_sImportFile;			// filename of file being imported
 	CharString			m_sBaseDirectory;		// directory that contains the file we are importing
 
-	fbxsdk_2013_2::FbxManager *	
-						m_pSDKManager;
-    fbxsdk_2013_2::FbxScene *			
-						m_pScene;
+	const aiScene *			m_pScene;		// scene being imported, valid only during import()
 	
 	//! Mutators
 	bool				importNodes( ScenePort * a_pScene, 
 							BaseNodePort * a_pParent, 
-							fbxsdk_2013_2::FbxNode * a_pNode );
+							const aiNode * a_pNode );
 
 	NodePort *			importNode( ScenePort * a_pScene,
 							BaseNodePort * a_pParent,
-							fbxsdk_2013_2::FbxNode * a_pNode );
+							const aiNode * a_pNode );
 	NodePort *			importMesh( ScenePort * a_pScene,
 							BaseNodePort * a_pParent,
-							fbxsdk_2013_2::FbxNode * a_pNode );
+							const aiNode * a_pNode );
 	CharString			importMaterial( ScenePort * a_pScene, 
-							fbxsdk_2013_2::FbxNode * a_pNode, int m = 0 );
+							const aiMaterial * a_pMaterial, const char * a_pDefaultName );
 	CharString			importImage( ScenePort * a_pScene, 
 							const char * a_pFile );
 };
